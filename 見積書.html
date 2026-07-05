@@ -15,6 +15,11 @@ body{ font-family:"Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,
 .io{ display:flex; gap:8px; margin-top:12px; }
 .io button{ flex:1; padding:9px; font-size:12px; font-weight:700; border-radius:8px; cursor:pointer; border:1px solid var(--navy2); background:#faf3ea; color:var(--navy); }
 .io button:hover{ background:#f5e9da; }
+.topnav{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px; }
+.topnav .homeBtn,.topnav .resetBtn{ padding:8px 12px; font-size:12px; font-weight:700; border-radius:8px; cursor:pointer; border:1px solid var(--navy2); background:#faf3ea; color:var(--navy); text-decoration:none; display:inline-flex; align-items:center; gap:5px; line-height:1; }
+.topnav .homeBtn:hover{ background:#f5e9da; }
+.topnav .resetBtn{ border-color:#d99; background:#fdecec; color:#b23; }
+.topnav .resetBtn:hover{ background:#fbdada; }
 .card{ background:#fff; border:1px solid var(--line); border-radius:10px; padding:13px; margin-top:13px; }
 .card h2{ font-size:13px; color:var(--navy); display:flex; align-items:center; gap:8px; margin-bottom:10px; }
 .card h2 .n{ display:inline-grid; place-items:center; width:20px; height:20px; border-radius:50%; background:var(--brand); color:#fff; font-size:12px; font-weight:700; }
@@ -80,6 +85,10 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 <body>
 <div class="app">
   <aside class="form">
+    <div class="topnav">
+      <a class="homeBtn" href="index.html">🏠 一覧へ戻る</a>
+      <button type="button" class="resetBtn" id="resetAllBtn">🗑 すべてリセット</button>
+    </div>
     <h1>御見積書メーカー</h1>
     <p class="sub">株式会社 小林機械 / EAST JAPAN MACHINE PLAZA</p>
     <div class="io"><button id="saveBtn">💾 PCに保存</button><button id="loadBtn">📂 読み込み</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"></div>
@@ -820,6 +829,13 @@ function applyState(s){ if(!s)return; Object.keys(s.fields||{}).forEach(id=>{ co
   $("lodgeList").innerHTML=""; const _lr=lodgesFromState(s); (_lr.length?_lr:[null]).forEach(l=>addLodgeRow(l)); refreshLodge();
   syncWE(); syncBase(); renderSheet(); if(s.sheetHTML){ const sh=$("sheet"); if(sh)sh.innerHTML=s.sheetHTML; } }
 
+/* ===== 自動保存（下書き）：APIキー(kkmt_gkey)は別枠なので消えない ===== */
+const DRAFT_KEY="kkmt_est_draft";
+let _autosaveT=null;
+function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){} },400); }
+function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
+function resetAll(){ if(!confirm("すべての入力を消去します。APIキーは残ります。よろしいですか？"))return; try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
+
 function fileBaseName(){ const no=($("estNo").value||"").trim(); const company=($("client").value.trim()||"御見積書"); return [no,company].filter(Boolean).join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
 async function buildPdf(){
   if($("sheet").querySelector(".empty")) renderSheet();
@@ -877,6 +893,10 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("genBtn").addEventListener("click",renderSheet); $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth); $("pdfBtn").addEventListener("click",savePdfOnly); $("dataBtn").addEventListener("click",saveDataOnly);
   $("addBlank").addEventListener("click",addBlankRow);
   syncWE(); syncBase();
+  restoreDraft();
+  const _app=document.querySelector(".app");
+  _app.addEventListener("input",autosave); _app.addEventListener("change",autosave);
+  $("resetAllBtn").addEventListener("click",resetAll);
 });
 </script>
 </body>
