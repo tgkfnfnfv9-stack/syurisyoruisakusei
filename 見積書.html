@@ -787,7 +787,7 @@ function computeItems(){
 }
 
 function fmtDate(v){ const d=v?new Date(v+"T00:00:00"):new Date(); return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; }
-function itemRowHTML(rn,name,amt){ return `<tr class="item-row"><td class="c-code"><span class="rn">${rn}</span><button class="rowdel" title="行を削除">×</button></td><td class="c-name" contenteditable>${name}</td><td class="c-qty" contenteditable>1</td><td class="c-unit" contenteditable>式</td><td class="c-price" contenteditable></td><td class="c-amt" contenteditable>${amt}</td><td class="c-note" contenteditable></td></tr>`; }
+function itemRowHTML(rn,name,amt){ return `<tr class="item-row"><td class="c-code"><span class="rn">${rn}</span><button class="rowdel" title="行を削除">×</button></td><td class="c-name" contenteditable>${name}</td><td class="c-qty" contenteditable>1</td><td class="c-unit" contenteditable>式</td><td class="c-price" contenteditable>${amt}</td><td class="c-amt" contenteditable>${amt}</td><td class="c-note" contenteditable></td></tr>`; }
 function renumberRows(){ document.querySelectorAll("#tbody .item-row .rn").forEach((s,i)=>s.textContent=i+1); }
 function bindItemRow(tr){ const a=tr.querySelector(".c-amt"); if(a)a.addEventListener("input",recalc); const d=tr.querySelector(".rowdel"); if(d)d.addEventListener("click",()=>{tr.remove();renumberRows();recalc();fitSheet();}); }
 function renderSheet(){ const items=computeItems(); let rows="";
