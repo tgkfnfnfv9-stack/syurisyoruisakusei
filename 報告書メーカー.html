@@ -184,7 +184,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
     <section class="card">
       <h2><span class="n">2</span>拠点・距離・人員</h2>
-      <p class="foot">本社・本庄のどちらから行くか選びます（両方ONで合算）。拠点ごとに距離・人数・台数を入力し、片道／往復の計算方法と、平日・土日祝それぞれの日数を入力。</p>
+      <p class="foot">本社・本庄のどちらから行くか選びます（両方ONで合算）。拠点ごとに距離・人数・台数を入力し、片道／往復の計算方法と、平日・土日祝それぞれの回数を入力。</p>
 
       <label class="check" style="margin-top:4px;"><input id="directUse" type="checkbox"><span class="base-head">直接入力（合計をまとめて入れる／拠点カードに合算）</span></label>
       <div class="base-card" id="directBox" style="display:none;">
@@ -214,8 +214,8 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <div class="row2"><label>人数<input id="b1_people" type="number" min="0" value="1"></label><label>台数<input id="b1_vehicles" type="number" min="0" value="1"></label></div>
         <label>距離の計算<select id="b1_mode"><option value="round">往復で計算</option><option value="oneway">片道で計算</option></select></label>
         <div class="row2">
-          <label>平日の日数<input id="b1_tripsWd" type="number" min="0" value="1"></label>
-          <label>土日祝の日数<input id="b1_tripsWe" type="number" min="0" value="0"></label>
+          <label>平日の回数<input id="b1_tripsWd" type="number" min="0" value="1"></label>
+          <label>土日祝の回数<input id="b1_tripsWe" type="number" min="0" value="0"></label>
         </div>
       </div>
 
@@ -232,8 +232,8 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <div class="row2"><label>人数<input id="b2_people" type="number" min="0" value="1"></label><label>台数<input id="b2_vehicles" type="number" min="0" value="1"></label></div>
         <label>距離の計算<select id="b2_mode"><option value="round">往復で計算</option><option value="oneway">片道で計算</option></select></label>
         <div class="row2">
-          <label>平日の日数<input id="b2_tripsWd" type="number" min="0" value="1"></label>
-          <label>土日祝の日数<input id="b2_tripsWe" type="number" min="0" value="0"></label>
+          <label>平日の回数<input id="b2_tripsWd" type="number" min="0" value="1"></label>
+          <label>土日祝の回数<input id="b2_tripsWe" type="number" min="0" value="0"></label>
         </div>
       </div>
 
@@ -251,8 +251,8 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <div class="row2"><label>人数<input id="b3_people" type="number" min="0" value="1"></label><label>台数<input id="b3_vehicles" type="number" min="0" value="1"></label></div>
         <label>距離の計算<select id="b3_mode"><option value="round">往復で計算</option><option value="oneway">片道で計算</option></select></label>
         <div class="row2">
-          <label>平日の日数<input id="b3_tripsWd" type="number" min="0" value="1"></label>
-          <label>土日祝の日数<input id="b3_tripsWe" type="number" min="0" value="0"></label>
+          <label>平日の回数<input id="b3_tripsWd" type="number" min="0" value="1"></label>
+          <label>土日祝の回数<input id="b3_tripsWe" type="number" min="0" value="0"></label>
         </div>
       </div>
     </section>
@@ -316,10 +316,9 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
     <section class="card">
       <h2><span class="n">10</span>お客様サイン</h2>
-      <p class="foot">下のボタンで全画面のサイン画面に切り替わります（お客様に見せながら記入）。</p>
+      <p class="foot">下のボタンで全画面のサイン画面に切り替わります（お客様に見せながら記入）。この入力画面では署名できません（誤操作防止）。</p>
       <button class="btn btn-navy" id="openSign" style="margin-top:6px;">📲 お客様確認・サイン画面へ</button>
-      <canvas id="sigPad"></canvas>
-      <div class="sub-links"><a id="sigClear">サインを消す</a><span class="hint">この枠でも指で署名できます</span></div>
+      <p class="foot" id="sigState" style="margin-top:8px;font-weight:700;"></p>
     </section>
 
     <textarea id="textareaMeasure" style="display:none"></textarea>
@@ -981,7 +980,7 @@ function applyState(s){ if(!s)return; let wk=Array.isArray(s.workers)?s.workers.
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("lodgeList").innerHTML=""; const _lr=lodgesFromState(s); (_lr.length?_lr:[null]).forEach(l=>addLodgeRow(l)); refreshLodge();
   $("workRows").innerHTML=""; (s.work&&s.work.length?s.work:[null]).forEach(w=>addWorkRow(w));
-  sigDataURL=s.signature||""; if(mainPad)mainPad.draw(sigDataURL);
+  sigDataURL=s.signature||""; if(mainPad)mainPad.draw(sigDataURL); updateSigState();
   syncWE(); syncBase(); refreshDirect(); renderReport(); if(s.sheetHTML){ const sh=$("sheet"); if(sh)sh.innerHTML=s.sheetHTML; } }
 
 /* ===== 自動保存（下書き）：APIキー(kkmt_gkey)・作業者リスト(kkmt_workers)は別枠なので消えない ===== */
@@ -1044,11 +1043,11 @@ function computeCosts(){
     const mvWd=rate*eH*b.people*b.tripsWd, mvWe=rate*eH*b.people*b.tripsWe*P.WEEKEND;
     const tlPer=b.toll*b.mult/(1+P.TAX), tl=tlPer*(b.tripsWd+b.tripsWe)*b.veh;
     transport+=trWd+trWe; travel+=mvWd+mvWe; toll+=tl; const sfx=both?`${b.label} `:"";
-    if(rKm>0&&b.tripsWd>0) dT.push([`${sfx}平日 ${mw}${fmt(rKm)}km×${b.tripsWd}日×${b.veh}台×@100`,trWd]);
-    if(rKm>0&&b.tripsWe>0) dT.push([`${sfx}土日祝 ${mw}${fmt(rKm)}km×${b.tripsWe}日×${b.veh}台×@100×1.5`,trWe]);
-    if(eH>0&&b.tripsWd>0) dV.push([`${sfx}平日 ${mw}${fmt(eH)}H×@${num(rate)}×${b.people}人×${b.tripsWd}日`,mvWd]);
-    if(eH>0&&b.tripsWe>0) dV.push([`${sfx}土日祝 ${mw}${fmt(eH)}H×@${num(rate)}×${b.people}人×${b.tripsWe}日×1.5`,mvWe]);
-    if(tl>0) dK.push([`${sfx}高速代税抜${num(tlPer)}×${b.tripsWd+b.tripsWe}日×${b.veh}台`,tl]);
+    if(rKm>0&&b.tripsWd>0) dT.push([`${sfx}平日 ${mw}${fmt(rKm)}km×${b.tripsWd}回×${b.veh}台×@100`,trWd]);
+    if(rKm>0&&b.tripsWe>0) dT.push([`${sfx}土日祝 ${mw}${fmt(rKm)}km×${b.tripsWe}回×${b.veh}台×@100×1.5`,trWe]);
+    if(eH>0&&b.tripsWd>0) dV.push([`${sfx}平日 ${mw}${fmt(eH)}H×@${num(rate)}×${b.people}人×${b.tripsWd}回`,mvWd]);
+    if(eH>0&&b.tripsWe>0) dV.push([`${sfx}土日祝 ${mw}${fmt(eH)}H×@${num(rate)}×${b.people}人×${b.tripsWe}回×1.5`,mvWe]);
+    if(tl>0) dK.push([`${sfx}高速代税抜${num(tlPer)}×${b.tripsWd+b.tripsWe}回×${b.veh}台`,tl]);
   });
   const D=directData();
   if(D){ transport+=D.trans; travel+=D.trav; toll+=D.ktoll;
@@ -1208,9 +1207,11 @@ function makePad(cv,onEnd){ const ctx=cv.getContext("2d");
   return { ctx, resize, clear:()=>ctx.clearRect(0,0,cv.width,cv.height), draw:(d)=>{ resize(); if(d){const i=new Image();i.onload=()=>ctx.drawImage(i,0,0,cv.width,cv.height);i.src=d;} } };
 }
 let mainPad=null, ssPad=null;
-function initSig(){ const cv=$("sigPad"); mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png");});
-  setTimeout(()=>mainPad.resize(),60); window.addEventListener("resize",()=>{ if(mainPad){mainPad.resize(); if(sigDataURL)mainPad.draw(sigDataURL);} });
-  $("sigClear").addEventListener("click",()=>{mainPad.clear();sigDataURL="";}); }
+function updateSigState(){ const el=$("sigState"); if(el)el.textContent=sigDataURL?"✅ サイン取得済み（サイン画面で修正できます）":"— サイン未取得"; }
+function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png");});
+    setTimeout(()=>mainPad.resize(),60); window.addEventListener("resize",()=>{ if(mainPad){mainPad.resize(); if(sigDataURL)mainPad.draw(sigDataURL);} }); }
+  const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear(); sigDataURL=""; updateSigState(); });
+  updateSigState(); }
 function openSignScreen(){
   $("ssClient").textContent=($("billName").value||$("client").value).trim(); $("ssSubject").textContent=$("subject").value.trim();
   $("ssTrouble").value=$("trouble").value; $("ssCause").value=$("cause").value; $("ssAction").value=$("action").value;
@@ -1219,7 +1220,7 @@ function openSignScreen(){
 function closeSignScreen(save){ if(save){ sigDataURL=$("ssSigPad").toDataURL("image/png");
     $("trouble").value=$("ssTrouble").value; $("cause").value=$("ssCause").value; $("action").value=$("ssAction").value;
     $("doneComplete").checked=$("ssComplete").classList.contains("on"); $("doneIncomplete").checked=$("ssIncomplete").classList.contains("on");
-    if(mainPad)mainPad.draw(sigDataURL); renderReport(); }
+    if(mainPad)mainPad.draw(sigDataURL); updateSigState(); renderReport(); }
   $("signScreen").classList.remove("show"); }
 
 document.addEventListener("DOMContentLoaded",()=>{
