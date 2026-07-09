@@ -852,7 +852,7 @@ async function buildPdf(){
   fitSheet();
   const el=$("sheet");
   if(!(window.html2canvas && window.jspdf)){ alert("PDF部品の読み込みに失敗しました。ページを開き直してください。"); return null; }
-  const canvas=await html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true});
+  const canvas=await html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true,ignoreElements:(e)=>e.classList&&e.classList.contains("rowdel")});
   const {jsPDF}=window.jspdf;
   const pdf=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
   const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), m=5;
