@@ -1279,11 +1279,16 @@ document.addEventListener("DOMContentLoaded",()=>{
       if(!IS_PC && navigator.canShare && navigator.canShare({files:[r.file]})){
         try{ await navigator.share({files:[r.file],title:r.name}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
       }
+      if(await pcSaveOne(r.blob,r.name,"application/pdf",".pdf")) return;
       downloadBlob(r.blob,r.name,true);
     }catch(e){ console.error(e); alert("PDFの作成に失敗しました。もう一度お試しください。"); }
   }
   async function saveBoth(){
     try{
+      if(IS_PC && window.showDirectoryPicker){
+        let dir=null; try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }catch(err){ if(err&&err.name==="AbortError")return; dir=null; }
+        if(dir){ const pdf=await buildReportPdf(); if(!pdf)return; const json=buildStateFile();
+          try{ for(const f of [json,pdf]){ const fh=await dir.getFileHandle(f.name,{create:true}); const w=await fh.createWritable(); await w.write(f.blob); await w.close(); } return; }catch(err){ console.error(err); } } }
       const pdf=await buildReportPdf(); if(!pdf)return;
       const json=buildStateFile();
       if(!IS_PC && navigator.canShare && navigator.canShare({files:[pdf.file,json.file]})){
@@ -1298,6 +1303,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       if(!IS_PC && navigator.canShare && navigator.canShare({files:[json.file]})){
         try{ await navigator.share({files:[json.file],title:json.name}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
       }
+      if(await pcSaveOne(json.blob,json.name,"application/json",".json")) return;
       downloadBlob(json.blob,json.name,false);
     }catch(e){ console.error(e); alert("データの保存に失敗しました。もう一度お試しください。"); }
   }
@@ -1305,6 +1311,10 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("genBtn").addEventListener("click",renderReport); $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth);
   $("pdfBtn").addEventListener("click",exportPDF); $("dataBtn").addEventListener("click",saveDataOnly);
   let IS_PC=false;
+  async function pcSaveOne(blob,name,mime,ext){ if(!(IS_PC && window.showSaveFilePicker)) return false;
+    let h; try{ h=await window.showSaveFilePicker({suggestedName:name,types:[{description:mime,accept:{[mime]:[ext]}}]}); }
+    catch(err){ if(err&&err.name==="AbortError") return true; return false; }
+    try{ const w=await h.createWritable(); await w.write(blob); await w.close(); return true; }catch(err){ console.error(err); return false; } }
   function applyDeviceMode(){ const sel=$("devMode"); if(!sel)return; IS_PC=(sel.value==="pc");
     const pb=$("printBtn"); if(pb)pb.style.display=IS_PC?"":"none";
     const set=(id,t)=>{ const b=$(id); if(b)b.textContent=t; };
