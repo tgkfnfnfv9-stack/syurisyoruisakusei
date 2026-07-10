@@ -53,6 +53,8 @@ input:focus,select:focus{ outline:2px solid var(--navy2); border-color:var(--nav
 .big{ padding:13px; font-size:14px; }
 .actions{ margin-top:16px; display:grid; gap:10px; }
 .split2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+.devmode{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; margin-bottom:2px; }
+.devmode select{ padding:6px 8px; font-size:14px; border-radius:8px; border:1px solid var(--navy2); background:#fff; }
 .foot{ font-size:10.5px; color:#8a96a4; margin-top:8px; line-height:1.45; }
 .notice{ margin-top:10px; padding:7px 9px; font-size:11.5px; border-radius:6px; background:#fff5e6; border:1px solid #f0c987; color:#8a5a00; }
 .status{ font-size:11px; margin-top:6px; min-height:14px; line-height:1.4; } .status.ok{ color:var(--ok); } .status.err{ color:var(--accent); }
@@ -322,7 +324,8 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     </section>
 
     <textarea id="textareaMeasure" style="display:none"></textarea>
-    <div class="actions"><button class="btn btn-navy big" id="genBtn">報告書を作成 / 更新</button>
+    <div class="actions"><label class="devmode">出力先<select id="devMode"><option value="mobile">携帯（共有）</option><option value="pc">パソコン（保存）</option></select></label>
+      <button class="btn btn-navy big" id="genBtn">報告書を作成 / 更新</button>
       <button class="btn btn-blue big" id="printBtn">印刷</button>
       <button class="btn btn-blue big" id="photoBtn">写真添付</button>
       <button class="btn btn-blue big" id="bothBtn">PDF、データ両方保存</button>
@@ -1273,7 +1276,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   }
   async function exportPDF(){
     try{ const r=await buildReportPdf(); if(!r)return;
-      if(navigator.canShare && navigator.canShare({files:[r.file]})){
+      if(!IS_PC && navigator.canShare && navigator.canShare({files:[r.file]})){
         try{ await navigator.share({files:[r.file],title:r.name}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
       }
       downloadBlob(r.blob,r.name,true);
@@ -1283,7 +1286,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     try{
       const pdf=await buildReportPdf(); if(!pdf)return;
       const json=buildStateFile();
-      if(navigator.canShare && navigator.canShare({files:[pdf.file,json.file]})){
+      if(!IS_PC && navigator.canShare && navigator.canShare({files:[pdf.file,json.file]})){
         try{ await navigator.share({files:[pdf.file,json.file],title:"報告書PDF＋データ"}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
       }
       downloadBlob(json.blob,json.name,false);
@@ -1292,7 +1295,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   }
   async function saveDataOnly(){
     try{ const json=buildStateFile();
-      if(navigator.canShare && navigator.canShare({files:[json.file]})){
+      if(!IS_PC && navigator.canShare && navigator.canShare({files:[json.file]})){
         try{ await navigator.share({files:[json.file],title:json.name}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
       }
       downloadBlob(json.blob,json.name,false);
@@ -1301,6 +1304,15 @@ document.addEventListener("DOMContentLoaded",()=>{
   function doPrint(){ if($("sheet").querySelector(".empty")) renderReport(); fitAllCells(); setTimeout(()=>window.print(),80); }
   $("genBtn").addEventListener("click",renderReport); $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth);
   $("pdfBtn").addEventListener("click",exportPDF); $("dataBtn").addEventListener("click",saveDataOnly);
+  let IS_PC=false;
+  function applyDeviceMode(){ const sel=$("devMode"); if(!sel)return; IS_PC=(sel.value==="pc");
+    const pb=$("printBtn"); if(pb)pb.style.display=IS_PC?"":"none";
+    const set=(id,t)=>{ const b=$(id); if(b)b.textContent=t; };
+    set("bothBtn", IS_PC?"PDF・データ両方保存":"PDF・データ両方を共有");
+    set("pdfBtn",  IS_PC?"PDF保存":"PDFを共有");
+    set("dataBtn", IS_PC?"データ保存":"データを共有");
+    try{ localStorage.setItem("kkmt_devmode", sel.value); }catch(e){} }
+  (function initDevMode(){ let saved=null; try{ saved=localStorage.getItem("kkmt_devmode"); }catch(e){} const guess=(navigator.canShare && matchMedia("(pointer:coarse)").matches)?"mobile":"pc"; $("devMode").value=(saved==="pc"||saved==="mobile")?saved:guess; applyDeviceMode(); $("devMode").addEventListener("change",applyDeviceMode); })();
   function openPhotoAttach(){ const code=(($("mKocon")&&$("mKocon").value)||"").trim();
     const base="https://www.kkmt.co.jp/staff/projects/short_search";
     const url=code?`${base}?utf8=%E2%9C%93&code=${encodeURIComponent(code)}`:base;
