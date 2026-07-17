@@ -135,8 +135,8 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <div class="row2"><label>人数<input id="b1_people" type="number" min="0" value="1"></label><label>台数<input id="b1_vehicles" type="number" min="0" value="1"></label></div>
         <label>距離の計算<select id="b1_mode"><option value="round">往復で計算</option><option value="oneway">片道で計算</option></select></label>
         <div class="row2">
-          <label>平日の日数<input id="b1_tripsWd" type="number" min="0" value="1"></label>
-          <label>土日祝の日数<input id="b1_tripsWe" type="number" min="0" value="0"></label>
+          <label>平日の回数<input id="b1_tripsWd" type="number" min="0" value="1"></label>
+          <label>土日祝の回数<input id="b1_tripsWe" type="number" min="0" value="0"></label>
         </div>
       </div>
 
@@ -153,8 +153,8 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <div class="row2"><label>人数<input id="b2_people" type="number" min="0" value="1"></label><label>台数<input id="b2_vehicles" type="number" min="0" value="1"></label></div>
         <label>距離の計算<select id="b2_mode"><option value="round">往復で計算</option><option value="oneway">片道で計算</option></select></label>
         <div class="row2">
-          <label>平日の日数<input id="b2_tripsWd" type="number" min="0" value="1"></label>
-          <label>土日祝の日数<input id="b2_tripsWe" type="number" min="0" value="0"></label>
+          <label>平日の回数<input id="b2_tripsWd" type="number" min="0" value="1"></label>
+          <label>土日祝の回数<input id="b2_tripsWe" type="number" min="0" value="0"></label>
         </div>
       </div>
 
@@ -172,8 +172,8 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <div class="row2"><label>人数<input id="b3_people" type="number" min="0" value="1"></label><label>台数<input id="b3_vehicles" type="number" min="0" value="1"></label></div>
         <label>距離の計算<select id="b3_mode"><option value="round">往復で計算</option><option value="oneway">片道で計算</option></select></label>
         <div class="row2">
-          <label>平日の日数<input id="b3_tripsWd" type="number" min="0" value="1"></label>
-          <label>土日祝の日数<input id="b3_tripsWe" type="number" min="0" value="0"></label>
+          <label>平日の回数<input id="b3_tripsWd" type="number" min="0" value="1"></label>
+          <label>土日祝の回数<input id="b3_tripsWe" type="number" min="0" value="0"></label>
         </div>
       </div>
     </section>
@@ -687,6 +687,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
+const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
+const taxInclude=v=>Math.floor(v*(1+P.TAX));  // 税抜→税込：切り捨て
 const ORIGINS={ b1:{label:"本社",addr:"群馬県館林市赤生田本町3831-2"}, b2:{label:"本庄",addr:"埼玉県本庄市児玉町秋山907"} };
 const NOTE_TEXT=
 `※作業時間（※3時間まで）￥45,000円（税別）※2日目以降も最初の3時間まで45,000円（税別）となります。
@@ -782,7 +784,7 @@ function computeItems(){
     const sfx=both?`（${b.label}）`:""; const eH=rH<=0?0:Math.max(rH,1);
     if(rKm>0) trans.push({name:`交通費${sfx}（100円×${mw}${fmt(rKm)}㎞）\n※概算になります`,amt:P.TRANSPORT*rKm*b.veh*tf});
     if(eH>0) trav.push({name:`移動費${sfx}（${num(rate)}円×${mw}${fmt(eH)}H）\n※概算になります`,amt:rate*eH*b.people*tf});
-    const tl=(b.toll*b.mult/(1+P.TAX))*tp*b.veh; if(tl>0||b.toll>0) tolls.push({name:`高速代${sfx}\n※概算になります`,amt:tl});
+    const tlPer=taxExclude(b.toll*b.mult); const tl=tlPer*tp*b.veh; if(tl>0||b.toll>0) tolls.push({name:`高速代${sfx}\n※概算になります`,amt:tl});
   });
   trans.forEach(x=>items.push(x)); trav.forEach(x=>items.push(x)); tolls.forEach(x=>items.push(x));
   const unit=Math.max(0,parseNum($("lodgeUnit").value)); const lt=lodgeTotals();
@@ -827,7 +829,7 @@ function fitSheet(){ const sheet=$("sheet"); if(!sheet||sheet.querySelector(".em
   // 7行以上などで溢れる場合は、備考（基本料金一覧）の文字だけ縮小して1ページに収める
   let fs=9, lh=1.5, guard=0;
   while(sheet.offsetHeight>targetH && fs>5 && guard<40){ fs-=0.5; lh=fs<7?1.3:1.45; note.style.fontSize=fs+"px"; note.style.lineHeight=String(lh); if(nbt)nbt.style.fontSize=(fs+0.5)+"px"; guard++; } }
-function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt").forEach(c=>sub+=parseNum(c.textContent)); const tax=Math.round(sub*P.TAX),total=Math.round(sub)+tax;
+function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt").forEach(c=>sub+=parseNum(c.textContent)); const total=taxInclude(sub),tax=total-Math.round(sub);
   if($("subCell")){$("subCell").textContent=num(sub);$("taxCell").textContent=num(tax);$("totalCell").textContent=num(total);$("topTotal").textContent=yen(total);} }
 function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); fitSheet(); }
 

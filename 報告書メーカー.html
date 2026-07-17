@@ -818,6 +818,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
+const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
+const taxInclude=v=>Math.floor(v*(1+P.TAX));  // 税抜→税込：切り捨て
 const ORIGINS={ b1:{label:"本社",addr:"群馬県館林市赤生田本町3831-2"}, b2:{label:"本庄",addr:"埼玉県本庄市児玉町秋山907"} };
 const NOTE_TEXT=
 `※作業時間（※3時間まで）￥45,000円（税別）※2日目以降も最初の3時間まで45,000円（税別）となります。
@@ -918,7 +920,7 @@ function computeItems(){
     const sfx=both?`（${b.label}）`:"";
     if(rKm>0) trans.push({name:`交通費${sfx}（100円×${mw}${fmt(rKm)}㎞）\n※概算になります`,amt:P.TRANSPORT*rKm*b.veh*tf});
     if(eH>0) trav.push({name:`移動費${sfx}（${num(rate)}円×${mw}${fmt(eH)}H）\n※概算になります`,amt:rate*eH*b.people*tf});
-    const tl=(b.toll*b.mult/(1+P.TAX))*tp*b.veh; if(tl>0||b.toll>0) tolls.push({name:`高速代${sfx}\n※概算になります`,amt:tl});
+    const tlPer=taxExclude(b.toll*b.mult); const tl=tlPer*tp*b.veh; if(tl>0||b.toll>0) tolls.push({name:`高速代${sfx}\n※概算になります`,amt:tl});
   });
   const D=directData();
   if(D){ if(D.trans>0) trans.push({name:(D.km>0?`交通費（100円×往復${fmt(D.km)}㎞）`:`交通費`)+`\n※概算になります`,amt:D.trans});
@@ -957,7 +959,7 @@ function renderSheet(){ const items=computeItems(); let rows="";
       <tr class="sum"><td colspan="5"></td><td class="sl">消費税等</td><td class="num" id="taxCell">0</td></tr>
       <tr class="sum"><td colspan="5"></td><td class="sl">合計</td><td class="num" id="totalCell">0</td></tr></tbody></table>`;
   document.querySelectorAll("#tbody .item-row").forEach(bindItemRow); recalc(); }
-function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt").forEach(c=>sub+=parseNum(c.textContent)); const tax=Math.round(sub*P.TAX),total=Math.round(sub)+tax;
+function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt").forEach(c=>sub+=parseNum(c.textContent)); const total=taxInclude(sub),tax=total-Math.round(sub);
   if($("subCell")){$("subCell").textContent=num(sub);$("taxCell").textContent=num(tax);$("totalCell").textContent=num(total);$("topTotal").textContent=yen(total);} }
 function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); }
 
@@ -1044,7 +1046,7 @@ function computeCosts(){
     const eH=rH<=0?0:Math.max(rH,1);
     const trWd=P.TRANSPORT*rKm*b.veh*b.tripsWd, trWe=P.TRANSPORT*rKm*b.veh*b.tripsWe*P.WEEKEND;
     const mvWd=rate*eH*b.people*b.tripsWd, mvWe=rate*eH*b.people*b.tripsWe*P.WEEKEND;
-    const tlPer=b.toll*b.mult/(1+P.TAX), tl=tlPer*(b.tripsWd+b.tripsWe)*b.veh;
+    const tlPer=taxExclude(b.toll*b.mult), tl=tlPer*(b.tripsWd+b.tripsWe)*b.veh;
     transport+=trWd+trWe; travel+=mvWd+mvWe; toll+=tl; const sfx=both?`${b.label} `:"";
     if(rKm>0&&b.tripsWd>0) dT.push([`${sfx}平日 ${mw}${fmt(rKm)}km×${b.tripsWd}回×${b.veh}台×@100`,trWd]);
     if(rKm>0&&b.tripsWe>0) dT.push([`${sfx}土日祝 ${mw}${fmt(rKm)}km×${b.tripsWe}回×${b.veh}台×@100×1.5`,trWe]);
