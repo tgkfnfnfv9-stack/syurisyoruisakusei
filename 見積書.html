@@ -247,7 +247,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 <template id="wdayRow"><div class="prow">
   <div class="row3" style="margin-top:0;">
     <label>人数<input class="wdPeople" type="number" min="0" value="1"></label>
-    <label>時間h<input class="wdHours" type="number" min="0" step="0.5" value="3"></label>
+    <label>時間h<input class="wdHours" type="number" min="0" step="0.5" value=""></label>
     <label>17:30以降h<input class="wdNight" type="number" min="0" step="0.5" value="0"></label>
   </div>
   <div style="display:flex;align-items:center;gap:8px;margin-top:8px;">
@@ -743,7 +743,7 @@ function addWdayRow(v){ const row=$("wdayRow").content.cloneNode(true).querySele
   $("wdList").appendChild(row); }
 function wdayRows(){ return [...document.querySelectorAll("#wdList .prow")].map(r=>({ people:r.querySelector(".wdPeople").value, hours:r.querySelector(".wdHours").value, night:r.querySelector(".wdNight").value, holiday:r.querySelector(".wdHol").checked })); }
 function perDayFee(h,n){ return P.WORK_BASE+Math.max(0,h-3)*P.WORK_OT+n*P.WORK_NIGHT; }
-function recomputeWorkFee(){ let fee=0; wdayRows().forEach(r=>{ const p=Math.max(0,parseNum(r.people)||0),h=Math.max(0,parseNum(r.hours)),n=Math.max(0,parseNum(r.night)); let f=p*perDayFee(h,n); if(r.holiday)f*=P.WEEKEND; fee+=f; }); $("workFee").value=Math.round(fee); }
+function recomputeWorkFee(){ let fee=0; wdayRows().forEach(r=>{ const p=Math.max(0,parseNum(r.people)||0),h=Math.max(0,parseNum(r.hours)),n=Math.max(0,parseNum(r.night)); if(h<=0&&n<=0)return; let f=p*perDayFee(h,n); if(r.holiday)f*=P.WEEKEND; fee+=f; }); $("workFee").value=Math.round(fee); }
 function workName(){ const rows=wdayRows().filter(r=>(Math.max(0,parseNum(r.people)||0)>0)&&((parseNum(r.hours)||0)>0||(parseNum(r.night)||0)>0));
   if(!rows.length)return "作業費";
   const parts=rows.map((r,i)=>{ const p=Math.max(0,parseNum(r.people)||0),h=Math.max(0,parseNum(r.hours)),n=Math.max(0,parseNum(r.night)); let t=h<=3?"3時間以内":`${fmt(h)}時間`; if(n>0)t+=`＋17:30以降${fmt(n)}h`; return `${i+1}日目 ${p}名 ${t}${r.holiday?"(土日祝)":""}`; });
@@ -778,7 +778,7 @@ function baseData(p){ const use=$(p+"_use").checked; const modeEl=$(p+"_mode"); 
 function computeItems(){
   const bases=[baseData("b1"),baseData("b2"),baseData("b3")].filter(b=>b.use);
   const both=bases.length>1;
-  const items=[{name:workName(),amt:Math.max(0,parseNum($("workFee").value))}];
+  const workAmt=Math.max(0,parseNum($("workFee").value)); const items=[]; if(workAmt>0) items.push({name:workName(),amt:workAmt});
   let totalPeople=0; const trans=[],trav=[],tolls=[];
   bases.forEach(b=>{ totalPeople+=b.people; const rKm=b.km*b.mult,rH=b.h*b.mult,tf=b.tripsWd+P.WEEKEND*b.tripsWe,tp=b.tripsWd+b.tripsWe,rate=b.km>=250?P.TRAVEL_FAR:P.TRAVEL,mw=b.mode==="oneway"?"片道":"往復";
     const sfx=both?`（${b.label}）`:""; const eH=rH<=0?0:Math.max(rH,1);
