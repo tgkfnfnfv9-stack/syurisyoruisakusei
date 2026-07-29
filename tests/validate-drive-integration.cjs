@@ -24,6 +24,7 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
   const duplicates = [...new Set(allIds.filter((id, index) => allIds.indexOf(id) !== index))];
   assert.deepEqual(duplicates, [], `${name}: duplicate ids: ${duplicates.join(", ")}`);
   assert.equal(allIds.filter(id => id === "mKocon").length, 1, `${name}: mKocon must appear exactly once`);
+  assert.equal(allIds.filter(id => id === "estNo").length, 0, `${name}: legacy estNo input must be removed`);
   inlineScripts(html).forEach((script, index) => {
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
@@ -44,6 +45,11 @@ assert.doesNotMatch(estimateApp, /setInterval\s*\(/);
 assert.doesNotMatch(reportApp, /setInterval\s*\(/);
 assert.match(estimateApp, /docType:"estimate"/);
 assert.match(reportApp, /docType:"report"/);
+assert.match(estimateApp, /<div class="k">高コン<\/div><div class="v" contenteditable>\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
+assert.match(reportApp, /<div class="k">高コン<\/div><div class="v" contenteditable>\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
+assert.match(estimateApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fields\.estNo/);
+assert.match(reportApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fields\.estNo/);
+assert.match(estimateApp, /const kocon=\(\$\("mKocon"\)\.value\|\|""\)\.trim\(\)/);
 assert.match(reportApp, /loadJson\(\{kocon,docType:"estimate"\}\)/);
 assert.doesNotMatch(reportApp, /loadJson\(\{kocon,docType:"report"\}\)/);
 
