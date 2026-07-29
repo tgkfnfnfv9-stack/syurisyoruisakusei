@@ -122,7 +122,6 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
       <label>件名<input id="subject" type="text" placeholder="例）研磨機 クラッチ取り外し"></label>
       <label>作業日にち <span class="hint">日にちが未定なら下の種別を「打ち合わせ」に</span><input id="workDate" type="date"></label>
       <label>種別（作業日／打ち合わせ）<select id="dateType"><option value="work">作業日</option><option value="meeting">打ち合わせ</option></select></label>
-      <label>見積番号<input id="estNo" type="text" placeholder="2026-0526-01"></label>
       <label>作業場所（住所）<span class="hint">距離・高速代の自動取得に使用</span><input id="address" type="text" placeholder="例）東京都江東区石島12-3"></label>
       <label>Google APIキー <span class="hint">（このPC内にのみ保存）</span><input id="apiKey" type="password" placeholder="AIza..."></label>
       <details><summary>APIキーの取り方（初回のみ）</summary><div class="help">Google Cloud Consoleで①プロジェクト作成 ②Routes API有効化 ③お支払い登録（少量は無料枠内）④APIキー作成 ⑤Routes APIのみに制限・ウェブサイト制限なし ⑥上に貼付（次回から記憶）</div></details>
@@ -826,7 +825,7 @@ function renderSheet(){ const items=computeItems(); let rows="";
         <div class="k">作業場所</div><div class="v" contenteditable>${esc($("address").value.trim())}</div>
         <div class="k">支払条件</div><div class="v" contenteditable>請求書届き次第</div>
         <div class="k">有効期限</div><div class="v" contenteditable>3ヶ月</div>
-        <div class="k">見積番号</div><div class="v" contenteditable>${esc($("estNo").value.trim())}</div></div>
+        <div class="k">高コン</div><div class="v" contenteditable>${esc($("mKocon").value.trim())}</div></div>
       <div class="total-box"><span class="lbl">合計金額(消費税等込)</span><span class="amt" id="topTotal">¥0</span></div></div>
       <div class="head-right"><div class="stamp"><div class="c"></div><div class="c"></div><div class="c"></div></div>
         <div class="brand">EAST&nbsp;JAPAN&nbsp;MACHINE<br>PLAZA</div><div class="co-block"><img class="co-mark" src="${LOGO_URI}" alt=""><div class="co-text"><div class="co">株式会社 小林機械</div>
@@ -849,11 +848,11 @@ function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt
   if($("subCell")){$("subCell").textContent=num(sub);$("taxCell").textContent=num(tax);$("totalCell").textContent=num(total);$("topTotal").textContent=yen(total);} }
 function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); fitSheet(); }
 
-const SIMPLE_IDS=["mKocon","client","subject","workDate","dateType","estNo","address","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_tripsWe","workFee","lodgeUnit"];
+const SIMPLE_IDS=["mKocon","client","subject","workDate","dateType","address","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_tripsWe","workFee","lodgeUnit"];
 function collectState(){ const s={fields:{},parts:partRowsRaw(),customs:customRowsRaw(),wdays:wdayRows(),lodges:lodgeRows()}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); const sh=$("sheet"); if(sh&&!sh.querySelector(".empty"))s.sheetHTML=sh.innerHTML; return s; }
 function saveState(){ const s=collectState(); const name=((s.fields.client||"見積").replace(/[\\\/:*?"<>|]/g,"_"))+"_"+(s.fields.workDate||"")+"_見積";
   const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name+".json"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
-function applyState(s){ if(!s)return; Object.keys(s.fields||{}).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!s.fields[id]; else el.value=s.fields[id]; });
+function applyState(s){ if(!s)return; const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("wdList").innerHTML=""; (s.wdays&&s.wdays.length?s.wdays:[null]).forEach(w=>addWdayRow(w));
@@ -867,7 +866,7 @@ function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ 
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
 function resetAll(){ if(!confirm("すべての入力を消去します。APIキーは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
-function fileBaseName(){ const no=($("estNo").value||"").trim(); const company=($("client").value.trim()||"御見積書"); return [no,company].filter(Boolean).join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
+function fileBaseName(){ const kocon=($("mKocon").value||"").trim(); const company=($("client").value.trim()||"御見積書"); return [kocon,company].filter(Boolean).join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
 async function buildPdf(){
   if($("sheet").querySelector(".empty")) renderSheet();
   fitSheet();
