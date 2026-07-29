@@ -58,6 +58,11 @@ input:focus,select:focus{ outline:2px solid var(--navy2); border-color:var(--nav
 .foot{ font-size:10.5px; color:#8a96a4; margin-top:8px; line-height:1.45; }
 .notice{ margin-top:10px; padding:7px 9px; font-size:11.5px; border-radius:6px; background:#fff5e6; border:1px solid #f0c987; color:#8a5a00; }
 .status{ font-size:11px; margin-top:6px; min-height:14px; line-height:1.4; } .status.ok{ color:var(--ok); } .status.err{ color:var(--accent); }
+.drive-card{ border-color:#b9d1f4; background:#f8fbff; }
+.drive-card h2{ color:#174ea6; }
+.drive-status{ font-size:11px; margin-top:8px; min-height:16px; line-height:1.45; color:#5f6b7a; }
+.drive-status.ok{ color:var(--ok); } .drive-status.err{ color:var(--accent); }
+.drive-card button:disabled{ opacity:.55; cursor:wait; }
 .hidden{ display:none; } .we-wrap{ display:none; } .we-head{ color:#b8860b; }
 details{ margin-top:10px; font-size:11.5px; } details summary{ cursor:pointer; color:var(--navy2); font-weight:700; }
 details .help{ margin-top:6px; line-height:1.6; color:#4a5663; } details .help a{ color:var(--google); }
@@ -160,6 +165,13 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <h1>作業報告書メーカー</h1>
     <p class="sub">株式会社 小林機械 / EAST JAPAN MACHINE PLAZA</p>
     <div class="io"><button id="saveBtn">💾 PCに保存</button><button id="loadBtn">📂 読み込み</button><button id="estBtn">📥 見積取込</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"><input id="estFile" type="file" accept="application/json,.json" class="hidden"></div>
+
+    <section class="card drive-card">
+      <h2>高コン・Google Drive</h2>
+      <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
+      <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>Google Driveに接続</button>
+      <p class="drive-status" id="driveStatus" role="status" aria-live="polite">Google認証を準備中…</p>
+    </section>
 
     <section class="card">
       <h2><span class="n">1</span>基本情報・相手先</h2>
@@ -293,7 +305,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
       <h2><span class="n">7</span>機械情報・提出日</h2>
       <label>報告書提出日<input id="repDate" type="date"></label>
       <div class="row3"><label>機械メーカー<input id="mMaker" type="text"></label><label>機種<input id="mType" type="text"></label><label>機械番号<input id="mNo" type="text"></label></div>
-      <div class="row2"><label>年式<input id="mYear" type="text"></label><label>高コン<input id="mKocon" type="text"></label></div>
+      <label>年式<input id="mYear" type="text"></label>
     </section>
 
     <section class="card">
@@ -816,6 +828,8 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="google-drive.js"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -840,6 +854,7 @@ const num=n=>Math.round(n).toLocaleString("ja-JP");
 const esc=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const parseNum=s=>parseFloat(String(s).replace(/[^0-9.\-]/g,""))||0;
 const fmt=n=>{ n=Math.round(n*10)/10; return Number.isInteger(n)?String(n):n.toFixed(1); };
+let driveAutosaveController=null;
 
 function addLodgeRow(v){ const row=$("lodgeRow").content.cloneNode(true).querySelector(".prow");
   row.querySelector(".del").addEventListener("click",()=>{ row.remove(); refreshLodge(); });
@@ -890,6 +905,7 @@ async function autoCalc(p){ const st=$(p+"_status"),key=$("apiKey").value.trim()
   st.textContent="取得中…";st.className="status";$(p+"_auto").disabled=true;
   try{ const r=await googleRoute(origin,dest,key); $(p+"_km").value=r.km.toFixed(1);$(p+"_h").value=r.h.toFixed(1);$(p+"_toll").value=Math.round(r.toll);
     st.innerHTML=`片道約${r.km.toFixed(1)}km／約${r.h.toFixed(1)}h／高速${r.hasToll?yen(r.toll):"なし"}（片道）。`;st.className="status ok";
+    if(driveAutosaveController)driveAutosaveController.markDirty();
   }catch(e){ st.innerHTML="自動取得に失敗（"+esc(e.message)+"）。下のリンクで手入力を。";st.className="status err"; } finally{$(p+"_auto").disabled=false;} }
 function openMap(p,kind){ const o=originAddr(p),d=$("address").value.trim(); if(!o){alert("出発地の住所を入力してください。");return;} if(!d){alert("作業場所の住所を入力してください。");return;}
   const u=kind==="yahoo"?`https://map.yahoo.co.jp/route/car?from=${encodeURIComponent(o)}&to=${encodeURIComponent(d)}`:`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&travelmode=driving`; window.open(u,"_blank"); }
@@ -993,17 +1009,18 @@ const DRAFT_KEY="kkmt_report_draft";
 let _autosaveT=null;
 function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){} },400); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
-function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
+function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
 /* 見積データ（御見積書メーカーのJSON）を取り込む。§1/2/4/5/6はそのまま、§3の作業内容→§8の作業行に変換 */
-function importEstimate(s){ if(!s||!s.fields){alert("見積データ（.json）ではないようです。");return;}
+function importEstimate(s,silent){ if(!s||!s.fields){if(!silent)alert("見積データ（.json）ではないようです。");return false;}
   const f=s.fields; const work=[];
   const pushDay=(people,hours,night,holiday)=>{ people=Math.max(0,parseNum(people)||0); const hrs=(parseNum(hours)||0)+(parseNum(night)||0); const ppl=[]; for(let i=0;i<people;i++)ppl.push({worker:"",hours:hrs?String(hrs):""}); if(!ppl.length)ppl.push({}); work.push({date:"",content:"作業",start:"",end:"",holiday:!!holiday,people:ppl}); };
   if(Array.isArray(s.wdays)&&s.wdays.length){ s.wdays.forEach(r=>pushDay(r.people,r.hours,r.night,r.holiday)); }
   else { const mk=(people,days,h,night,holiday)=>{ days=Math.max(0,parseNum(days)||0); for(let d=0;d<days;d++)pushDay(people,h,night,holiday); };
     mk(f.wkdPeople,f.daysWd,f.hoursWd,f.nightWd,false); mk(f.wkePeople,f.daysWe,f.hoursWe,f.nightWe,true); }
   applyState({ fields:f, parts:s.parts||[], customs:s.customs||[], lodges:s.lodges||lodgesFromState(s), work, workers:[] });
-  alert("見積データを取り込みました。§8の作業者名は空欄なので、必要に応じて選んでください。"); }
+  if(!silent)alert("見積データを取り込みました。§8の作業者名は空欄なので、必要に応じて選んでください。");
+  return true; }
 
 /* ===== 報告書 追加ロジック ===== */
 let WORKERS=[]; let sigDataURL="";
@@ -1213,7 +1230,7 @@ function makePad(cv,onEnd){ const ctx=cv.getContext("2d");
 }
 let mainPad=null, ssPad=null;
 function updateSigState(){ const el=$("sigState"); if(el)el.textContent=sigDataURL?"✅ サイン取得済み（サイン画面で修正できます）":"— サイン未取得"; }
-function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png");});
+function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png"); updateSigState(); if(driveAutosaveController)driveAutosaveController.markDirty();});
     setTimeout(()=>mainPad.resize(),60); window.addEventListener("resize",()=>{ if(mainPad){mainPad.resize(); if(sigDataURL)mainPad.draw(sigDataURL);} }); }
   const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear(); sigDataURL=""; updateSigState(); });
   updateSigState(); }
@@ -1241,8 +1258,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("apiKey").addEventListener("change",()=>{ try{localStorage.setItem("kkmt_gkey",$("apiKey").value.trim());}catch{} });
   $("saveBtn").addEventListener("click",saveState); $("loadBtn").addEventListener("click",()=>$("loadFile").click());
   $("estBtn").addEventListener("click",()=>$("estFile").click());
-  $("estFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのは見積データ（.json）です。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=()=>{ try{importEstimate(JSON.parse(rd.result));}catch(err){alert("取り込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
-  $("loadFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのはデータ（.json）ファイルです。PDFは読み込めません。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=()=>{ try{applyState(JSON.parse(rd.result));}catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
+  $("estFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのは見積データ（.json）です。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=()=>{ try{importEstimate(JSON.parse(rd.result)); if(driveAutosaveController)driveAutosaveController.adoptCurrentKocon({confirmed:true});}catch(err){alert("取り込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
+  $("loadFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのはデータ（.json）ファイルです。PDFは読み込めません。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=()=>{ try{applyState(JSON.parse(rd.result)); if(driveAutosaveController)driveAutosaveController.adoptCurrentKocon({confirmed:true});}catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   document.querySelectorAll(".we-toggle").forEach(cb=>cb.addEventListener("change",syncWE));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow());
@@ -1346,6 +1363,38 @@ document.addEventListener("DOMContentLoaded",()=>{
   ["d_trans","d_trav","d_ktoll"].forEach(id=>$(id).addEventListener("input",()=>{ const el=$(id); el.dataset.edited=el.value.trim()===""?"":"1"; }));
   syncWE(); syncBase(); refreshDirect();
   restoreDraft();
+  driveAutosaveController=KKMTDrive.createAutosaveController({
+    docType:"report",
+    rootElement:document.querySelector(".app"),
+    koconInput:$("mKocon"),
+    statusElement:$("driveStatus"),
+    connectButton:$("driveConnectBtn"),
+    collectState,
+    onKoconConfirmed:async({kocon,isConnected,setStatus})=>{
+      if(!isConnected){
+        setStatus("Drive接続後に、この高コンの見積書データを確認します。");
+        return false;
+      }
+      if(!confirm(`高コン「${kocon}」の見積書データを読み込みますか？`)){
+        setStatus("見積書を読み込まず、現在の内容を報告書として保存します。");
+        return true;
+      }
+      setStatus("見積書データをGoogle Driveから読み込み中…");
+      const estimate=await KKMTDrive.loadJson({kocon,docType:"estimate"});
+      if(!estimate){
+        setStatus(`高コン「${kocon}」の見積書データが見つかりません。`,"error");
+        return true;
+      }
+      if(!importEstimate(estimate,true)){
+        setStatus("Drive上の見積書データを取り込めませんでした。","error");
+        return false;
+      }
+      $("mKocon").value=kocon;
+      setStatus("見積書データを読み込みました。§8の作業者を確認してください。","ok");
+      return true;
+    }
+  });
+  driveAutosaveController.init();
   const _app=document.querySelector(".app");
   _app.addEventListener("input",autosave); _app.addEventListener("change",autosave);
   $("resetAllBtn").addEventListener("click",resetAll);
