@@ -176,7 +176,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <section class="card">
       <h2><span class="n">1</span>基本情報・相手先</h2>
       <label>件名<input id="subject" type="text" placeholder="例）研磨機 クラッチ取り外し"></label>
-      <div class="hidden"><input id="client" type="text"><input id="workDate" type="date"><input id="estNo" type="text"></div>
+      <div class="hidden"><input id="client" type="text"><input id="workDate" type="date"></div>
 
       <p class="foot" style="margin-top:8px;"><b>ご請求先</b>（請求書の宛先）</p>
       <label>会社名<input id="billName" type="text" placeholder="例）岡機械刃物研磨"></label>
@@ -965,7 +965,7 @@ function renderSheet(){ const items=computeItems(); let rows="";
         <div class="k">作業場所</div><div class="v" contenteditable>${esc($("address").value.trim())}</div>
         <div class="k">支払条件</div><div class="v" contenteditable>請求書届き次第</div>
         <div class="k">有効期限</div><div class="v" contenteditable>3ヶ月</div>
-        <div class="k">見積番号</div><div class="v" contenteditable>${esc($("estNo").value.trim())}</div></div>
+        <div class="k">高コン</div><div class="v" contenteditable>${esc($("mKocon").value.trim())}</div></div>
       <div class="total-box"><span class="lbl">合計金額(消費税等込)</span><span class="amt" id="topTotal">¥0</span></div></div>
       <div class="head-right"><div class="stamp"><div class="c"></div><div class="c"></div><div class="c"></div></div>
         <div class="brand">EAST&nbsp;JAPAN&nbsp;MACHINE<br>PLAZA</div><div class="co">株式会社 小林機械</div>
@@ -979,7 +979,7 @@ function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt
   if($("subCell")){$("subCell").textContent=num(sub);$("taxCell").textContent=num(tax);$("totalCell").textContent=num(total);$("topTotal").textContent=yen(total);} }
 function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); }
 
-const SIMPLE_IDS=["client","subject","workDate","estNo","address","directUse","d_km","d_h","d_toll","d_trans","d_trav","d_ktoll","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_we","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_we","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_we","b3_tripsWe","daysWd","workWE","daysWe","hoursPerDay","nightHours","workFee","nightsWd","lodgeWE","nightsWe","lodgeUnit","lodgePeople","lodgePeopleWd","lodgePeopleWe","repDate","mMaker","mType","mNo","mYear","mKocon","billTel","billPerson","billName","billAddr","siteName","siteTel","sameAsSite","trouble","cause","action","custSupply","payDate","doneComplete","doneIncomplete"];
+const SIMPLE_IDS=["client","subject","workDate","address","directUse","d_km","d_h","d_toll","d_trans","d_trav","d_ktoll","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_we","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_we","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_we","b3_tripsWe","daysWd","workWE","daysWe","hoursPerDay","nightHours","workFee","nightsWd","lodgeWE","nightsWe","lodgeUnit","lodgePeople","lodgePeopleWd","lodgePeopleWe","repDate","mMaker","mType","mNo","mYear","mKocon","billTel","billPerson","billName","billAddr","siteName","siteTel","sameAsSite","trouble","cause","action","custSupply","payDate","doneComplete","doneIncomplete"];
 function collectState(){ const s={fields:{},parts:partRowsRaw(),customs:customRowsRaw(),lodges:lodgeRows(),work:getWorkRows(),workers:WORKERS,activeWorkers:ACTIVE.slice(),signature:sigDataURL}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); const sh=$("sheet"); if(sh&&!sh.querySelector(".empty"))s.sheetHTML=sh.innerHTML; return s; }
 function fileBaseName(){ const kocon=(($("mKocon")&&$("mKocon").value)||"").trim();
   const company=($("billName").value.trim()||$("client").value.trim()||"作業報告書");
@@ -993,10 +993,10 @@ async function saveState(){ const s=collectState(); const name=fileBaseName()+".
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>{ try{ window.open(url,"_blank"); }catch(e){} setTimeout(()=>URL.revokeObjectURL(url),60000); },800); }
-function applyState(s){ if(!s)return; let wk=Array.isArray(s.workers)?s.workers.slice():[]; (s.work||[]).forEach(w=>{ (w.people||(w.worker?[{worker:w.worker}]:[])).forEach(p=>{ if(p.worker&&!wk.includes(p.worker))wk.push(p.worker); }); }); WORKERS=wk; saveWorkers();
+function applyState(s){ if(!s)return; const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; let wk=Array.isArray(s.workers)?s.workers.slice():[]; (s.work||[]).forEach(w=>{ (w.people||(w.worker?[{worker:w.worker}]:[])).forEach(p=>{ if(p.worker&&!wk.includes(p.worker))wk.push(p.worker); }); }); WORKERS=wk; saveWorkers();
   ACTIVE = (Array.isArray(s.activeWorkers)&&s.activeWorkers.length) ? s.activeWorkers.filter(w=>WORKERS.includes(w)) : [...new Set((s.work||[]).flatMap(w=>(w.people||[]).map(p=>p.worker)).filter(Boolean))];
   renderWorkerPick();
-  Object.keys(s.fields||{}).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!s.fields[id]; else el.value=s.fields[id]; });
+  Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("lodgeList").innerHTML=""; const _lr=lodgesFromState(s); (_lr.length?_lr:[null]).forEach(l=>addLodgeRow(l)); refreshLodge();
