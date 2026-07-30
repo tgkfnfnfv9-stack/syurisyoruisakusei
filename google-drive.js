@@ -535,7 +535,6 @@
           if (confirmed) confirmedKocons.add(next);
         }
 
-        await markDirty({ immediate: true });
         return true;
       })().finally(() => {
         commitPromise = null;
@@ -543,12 +542,12 @@
       return commitPromise;
     }
 
-    function adoptCurrentKocon({ confirmed = false } = {}) {
+    function adoptCurrentKocon({ confirmed = false, save = true } = {}) {
       const current = normalizeKocon(koconInput.value);
       koconInput.value = current;
       activeKocon = current;
       if (confirmed && current) confirmedKocons.add(current);
-      return markDirty({ immediate: true });
+      return save ? markDirty({ immediate: true }) : Promise.resolve();
     }
 
     function discardCurrent() {
@@ -576,7 +575,6 @@
           setStatus("Google Driveへ接続済み", "ok");
         }
         await confirmCurrentKocon();
-        await markDirty({ immediate: true });
       } catch (error) {
         console.error("Google Drive connection failed", error);
         setStatus("Google Driveへ接続できませんでした。もう一度お試しください。", "error");
@@ -614,7 +612,6 @@
             setStatus("Google Drive接続済み", "ok");
           }
           await confirmCurrentKocon();
-          await markDirty({ immediate: true });
         }).catch(error => {
           console.error("Google Drive session resume failed", error);
           setStatus("接続の再開に失敗しました。接続ボタンを押してください。", "error");
