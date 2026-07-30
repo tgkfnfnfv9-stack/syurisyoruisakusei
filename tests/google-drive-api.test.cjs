@@ -4,12 +4,18 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 const storage = new Map();
+const session = new Map();
 const localStorage = {
   get length() { return storage.size; },
   key: index => [...storage.keys()][index] ?? null,
   getItem: key => storage.has(key) ? storage.get(key) : null,
   setItem: (key, value) => storage.set(key, String(value)),
   removeItem: key => storage.delete(key)
+};
+const sessionStorage = {
+  getItem: key => session.has(key) ? session.get(key) : null,
+  setItem: (key, value) => session.set(key, String(value)),
+  removeItem: key => session.delete(key)
 };
 
 const files = new Map();
@@ -95,11 +101,12 @@ window.google = {
   accounts: {
     oauth2: {
       initTokenClient: options => ({
-        requestAccessToken: () => options.callback({ access_token: "test-access-token" })
+        requestAccessToken: () => options.callback({ access_token: "test-access-token", expires_in: 3600 })
       })
     }
   }
 };
+window.sessionStorage = sessionStorage;
 
 const context = {
   window,
@@ -141,6 +148,38 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js")
   assert.equal(documents.find(file => file.appProperties.docType === "estimate").name, "高コン12345_見積書.json");
   assert.equal(documents.find(file => file.appProperties.docType === "report").name, "高コン12345_報告書.json");
   assert.ok(![...storage.values()].some(value => value.includes("test-access-token")));
+  assert.ok([...session.values()].some(value => value.includes("test-access-token")));
+
+  localStorage.setItem("kkmt_drive_pending_estimate_200", JSON.stringify({
+    docType: "estimate",
+    kocon: "200",
+    json: JSON.stringify({ version: 20 }),
+    updatedAt: "2026-07-30T00:00:00.000Z"
+  }));
+  localStorage.setItem("kkmt_drive_pending_report_300", JSON.stringify({
+    docType: "report",
+    kocon: "300",
+    json: JSON.stringify({ version: 30 }),
+    updatedAt: "2026-07-30T00:00:01.000Z"
+  }));
+  const estimateFlush = await drive.flushPending("estimate");
+  assert.equal(estimateFlush.length, 1);
+  assert.equal(localStorage.getItem("kkmt_drive_pending_estimate_200"), null);
+  assert.notEqual(localStorage.getItem("kkmt_drive_pending_report_300"), null);
+  assert.deepEqual(await drive.loadJson({ kocon: "200", docType: "estimate" }), { version: 20 });
+
+  const restoredWindow = { addEventListener() {}, confirm: () => true, sessionStorage };
+  restoredWindow.window = restoredWindow;
+  restoredWindow.google = window.google;
+  const restoredContext = {
+    ...context,
+    window: restoredWindow
+  };
+  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js"), "utf8"), restoredContext, {
+    filename: "google-drive-restored.js"
+  });
+  await restoredWindow.KKMTDrive.prepare();
+  assert.equal(restoredWindow.KKMTDrive.isConnected(), true);
 
   console.log("Google Drive API mock checks passed.");
 })().catch(error => {
