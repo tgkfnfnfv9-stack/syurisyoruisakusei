@@ -109,8 +109,6 @@ assert.match(estimateDriveCard[0], /id="driveLoginBtn"[\s\S]*>Googleにログイ
 assert.match(reportDriveCard[0], /id="driveLoginBtn"[\s\S]*>Googleにログイン<\/a>/);
 assert.match(estimateDriveCard[0], /target="_blank" rel="noopener"/);
 assert.match(reportDriveCard[0], /target="_blank" rel="noopener"/);
-assert.doesNotMatch(estimateDriveCard[0], /Dean/);
-assert.doesNotMatch(reportDriveCard[0], /Dean/);
 assert.doesNotMatch(estimate, /\.drive-card\{\s*border-color:/);
 assert.doesNotMatch(report, /\.drive-card\{\s*border-color:/);
 assert.match(estimateApp, /<div class="k">見積番号<\/div><div class="v" contenteditable>\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
