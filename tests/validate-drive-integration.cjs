@@ -29,7 +29,7 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
   assert.match(html, /accounts\.google\.com\/gsi\/client/);
-  assert.match(html, /<script src="google-drive\.js\?v=20260730-3"><\/script>/);
+  assert.match(html, /<script src="google-drive\.js\?v=20260730-4"><\/script>/);
 }
 
 new vm.Script(drive, { filename: "google-drive.js" });
@@ -49,8 +49,10 @@ assert.doesNotMatch(estimateApp, /setInterval\s*\(/);
 assert.doesNotMatch(reportApp, /setInterval\s*\(/);
 assert.match(estimateApp, /docType:"estimate"/);
 assert.match(reportApp, /docType:"report"/);
-assert.match(estimate, /id="driveLoadEstimateBtn"/);
-assert.match(report, /id="driveLoadReportBtn"/);
+assert.match(estimate, /id="driveSearchEstimateKoconBtn"/);
+assert.match(estimate, /id="driveSearchEstimateSubjectBtn"/);
+assert.match(report, /id="driveSearchReportKoconBtn"/);
+assert.match(report, /id="driveSearchReportSubjectBtn"/);
 assert.match(report, /id="driveImportEstimateBtn"/);
 assert.doesNotMatch(estimate, /id="genBtn"/);
 assert.doesNotMatch(report, /id="genBtn"/);
@@ -63,12 +65,22 @@ assert.match(reportApp, /liveForm\.addEventListener\("input",scheduleLivePreview
 assert.match(reportApp, /replace\(\/\\n\/g,"<br>"\)/);
 assert.match(estimateApp, /onKoconConfirmed:autoLoadEstimateFromDrive/);
 assert.match(reportApp, /onKoconConfirmed:autoLoadReportFromDrive/);
+assert.match(estimateApp, /fallbackInput:\$\("subject"\)/);
+assert.match(reportApp, /fallbackInput:\$\("subject"\)/);
 assert.match(estimateApp, /docType:"estimate"/);
 assert.match(reportApp, /docType:"report"/);
 assert.match(estimateApp, /"見積もり"\]\.join\("_"\)/);
 assert.match(reportApp, /"報告書"\]\.join\("_"\)/);
 assert.match(drive, /estimateFolderName: "見積もり"/);
 assert.match(drive, /_kkmtDocumentType/);
+assert.match(drive, /findDocumentBySubject/);
+assert.match(drive, /findDocumentByEmbeddedSubject/);
+assert.match(drive, /subjectKey/);
+assert.match(drive, /previousSubject/);
+assert.match(estimateApp, /searchEstimateFromDrive\("kocon"\)/);
+assert.match(estimateApp, /searchEstimateFromDrive\("subject"\)/);
+assert.match(reportApp, /searchReportFromDrive\("kocon"\)/);
+assert.match(reportApp, /searchReportFromDrive\("subject"\)/);
 assert.match(estimateApp, /loadJson\(\{kocon,docType:"estimate"\}\)/);
 assert.match(reportApp, /loadJson\(\{kocon,docType:"report"\}\)/);
 assert.match(estimate, /<h2>高コン／見積もり番号・Google Drive<\/h2>/);

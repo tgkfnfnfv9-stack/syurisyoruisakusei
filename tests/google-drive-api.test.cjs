@@ -39,11 +39,13 @@ async function driveFetch(url, options = {}) {
         const parent = (query.match(/'([^']+)' in parents/) || [])[1];
         if (file.mimeType.includes("folder") && file.name === name && file.parents.includes(parent)) matches.push(file);
       } else if (query.includes("appProperties has")) {
-        const values = [...query.matchAll(/value='([^']+)'/g)].map(match => match[1]);
+        const properties = Object.fromEntries(
+          [...query.matchAll(/key='([^']+)' and value='([^']+)'/g)]
+            .map(match => [match[1], match[2]])
+        );
         const parent = (query.match(/'([^']+)' in parents/) || [])[1];
         if (file.parents.includes(parent) &&
-            file.appProperties?.kocon === values[0] &&
-            file.appProperties?.docType === values[1]) {
+            Object.entries(properties).every(([key, value]) => file.appProperties?.[key] === value)) {
           matches.push(file);
         }
       }
@@ -142,24 +144,51 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js")
   await drive.prepare();
   await drive.connect();
 
-  await drive.saveJson({ kocon: "12345", docType: "estimate", data: { version: 1 } });
-  await drive.saveJson({ kocon: "12345", docType: "estimate", data: { version: 2 } });
-  await drive.saveJson({ kocon: "12345", docType: "report", data: { version: 10 } });
+  await drive.saveJson({ kocon: "12345", subject: "研磨機修理", docType: "estimate", data: { version: 1 } });
+  await drive.saveJson({ kocon: "12345", subject: "研磨機修理", docType: "estimate", data: { version: 2 } });
+  await drive.saveJson({ kocon: "12345", subject: "作業報告案件", docType: "report", data: { version: 10 } });
 
   assert.deepEqual(await drive.loadJson({ kocon: "12345", docType: "estimate" }), { version: 2 });
   assert.deepEqual(await drive.loadJson({ kocon: "12345", docType: "report" }), { version: 10 });
+  assert.deepEqual(await drive.loadJson({ subject: "研磨機修理", docType: "estimate" }), { version: 2 });
+  assert.deepEqual(await drive.loadJson({ subject: "作業報告案件", docType: "report" }), { version: 10 });
+  const reportForLegacySearch = [...files.values()].find(file => file.appProperties?.docType === "report");
+  delete reportForLegacySearch.appProperties.subjectKey;
+  reportForLegacySearch.data = { fields: { subject: "作業報告案件" }, version: 10, _kkmtDocumentType: "report" };
+  assert.deepEqual(await drive.loadJson({ subject: "作業報告案件", docType: "report" }), { fields: { subject: "作業報告案件" }, version: 10 });
+  reportForLegacySearch.appProperties.subjectKey = "作業報告案件";
 
   const documents = [...files.values()].filter(file => file.appProperties);
   assert.equal(documents.length, 2);
-  assert.equal(documents.find(file => file.appProperties.docType === "estimate").name, "高コン12345_見積もり.json");
+  assert.equal(documents.find(file => file.appProperties.docType === "estimate").name, "高コン12345_研磨機修理_見積もり.json");
   assert.equal(documents.find(file => file.appProperties.docType === "report").name, "高コン12345_報告書.json");
   assert.equal(documents.find(file => file.appProperties.docType === "estimate").data._kkmtDocumentType, "estimate");
   assert.equal(documents.find(file => file.appProperties.docType === "report").data._kkmtDocumentType, "report");
   assert.equal([...files.values()].some(file => file.mimeType.includes("folder") && file.name === "見積もり"), true);
   assert.equal([...files.values()].some(file => file.mimeType.includes("folder") && file.name === "報告書"), true);
+  await drive.saveJson({ subject: "高コン未定案件", docType: "estimate", data: { version: 30 } });
+  const subjectDraft = [...files.values()].find(file => file.appProperties?.subjectKey === "高コン未定案件");
+  assert.equal(subjectDraft.name, "高コン未定案件_見積もり.json");
+  const subjectDraftId = subjectDraft.id;
+  await drive.saveJson({ kocon: "888", subject: "高コン未定案件", docType: "estimate", data: { version: 31 } });
+  const promotedDraft = [...files.values()].find(file => file.id === subjectDraftId);
+  assert.equal(promotedDraft.name, "高コン888_高コン未定案件_見積もり.json");
+  assert.equal(promotedDraft.appProperties.kocon, "888");
+  assert.deepEqual(await drive.loadJson({ kocon: "888", docType: "estimate" }), { version: 31 });
+  assert.deepEqual(await drive.loadJson({ subject: "高コン未定案件", docType: "estimate" }), { version: 31 });
+  assert.equal([...files.values()].filter(file => file.appProperties?.subjectKey === "高コン未定案件").length, 1);
+  await drive.saveJson({ subject: "変更前件名", docType: "estimate", data: { version: 40 } });
+  const renamedSubjectDraft = [...files.values()].find(file => file.appProperties?.subjectKey === "変更前件名");
+  await drive.saveJson({ subject: "変更後件名", previousSubject: "変更前件名", docType: "estimate", data: { version: 41 } });
+  assert.equal([...files.values()].find(file => file.id === renamedSubjectDraft.id).name, "変更後件名_見積もり.json");
+  assert.equal([...files.values()].filter(file => ["変更前件名","変更後件名"].includes(file.appProperties?.subjectKey)).length, 1);
   await assert.rejects(
     () => drive.saveJson({ kocon: "12345", docType: "other", data: {} }),
     /不明な書類種別/
+  );
+  await assert.rejects(
+    () => drive.saveJson({ subject: "報告書は高コン必須", docType: "report", data: {} }),
+    /高コンが空欄/
   );
   await drive.saveJson({ kocon: "wrong-type", docType: "report", data: { work: [] } });
   const wrongTypeFile = documents.find(file => file.appProperties.kocon === "wrong-type") ||
