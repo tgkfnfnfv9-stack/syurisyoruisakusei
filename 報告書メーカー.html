@@ -62,6 +62,9 @@ input:focus,select:focus{ outline:2px solid var(--navy2); border-color:var(--nav
 .drive-status.ok{ color:var(--ok); } .drive-status.err{ color:var(--accent); }
 .drive-card button:disabled{ opacity:.55; cursor:wait; }
 .drive-search{ margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
+.drive-search-modes{ display:flex; gap:16px; flex-wrap:wrap; margin:8px 0; }
+.drive-search-modes label{ display:flex; align-items:center; gap:6px; margin:0; font-weight:700; }
+.drive-search-modes input{ width:auto; margin:0; }
 .hidden{ display:none; } .we-wrap{ display:none; } .we-head{ color:#b8860b; }
 details{ margin-top:10px; font-size:11.5px; } details summary{ cursor:pointer; color:var(--navy2); font-weight:700; }
 details .help{ margin-top:6px; line-height:1.6; color:#4a5663; } details .help a{ color:var(--google); }
@@ -170,10 +173,13 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
       <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
       <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>Google Driveに接続</button>
       <div class="drive-search">
-        <label>高コン検索<input id="driveSearchKocon" data-drive-search type="text" autocomplete="off" placeholder="高コン番号を入力"></label>
-        <button type="button" class="btn btn-google" id="driveSearchReportKoconBtn" style="margin-top:8px;">高コンで報告書検索</button>
-        <label style="margin-top:10px;">件名検索<input id="driveSearchSubject" data-drive-search type="text" autocomplete="off" placeholder="件名を入力"></label>
-        <button type="button" class="btn btn-google" id="driveSearchReportSubjectBtn" style="margin-top:8px;">件名で報告書検索</button>
+        <p class="foot" style="margin-top:0;"><b>検索方法</b></p>
+        <div class="drive-search-modes">
+          <label><input type="radio" name="reportDriveSearchMode" id="driveSearchModeKocon" value="kocon" checked>高コン番号</label>
+          <label><input type="radio" name="reportDriveSearchMode" id="driveSearchModeSubject" value="subject">件名</label>
+        </div>
+        <button type="button" class="btn btn-google" id="driveSearchReportBtn">報告書を検索</button>
+        <p class="foot">高コン番号は上の入力欄、件名は基本情報の件名欄を使用します。</p>
       </div>
       <button type="button" class="btn btn-google" id="driveImportEstimateBtn" style="margin-top:8px;">Driveから見積書を取り込む</button>
       <p class="drive-status" id="driveStatus" role="status" aria-live="polite">Google認証を準備中…</p>
@@ -1016,9 +1022,9 @@ function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ 
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
 function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
-async function searchReportFromDrive(searchType){
-  const byKocon=searchType==="kocon";
-  const input=$(byKocon?"driveSearchKocon":"driveSearchSubject");
+async function searchReportFromDrive(){
+  const byKocon=$("driveSearchModeKocon").checked;
+  const input=$(byKocon?"mKocon":"subject");
   const term=(input.value||"").trim();
   if(!term){ alert(byKocon?"検索する高コン番号を入力してください。":"検索する件名を入力してください。"); return; }
   if(!KKMTDrive.isConnected()){ driveAutosaveController.setStatus("先にGoogle Driveへ接続してください。","error"); return; }
@@ -1441,8 +1447,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     onKoconConfirmed:autoLoadReportFromDrive
   });
   driveAutosaveController.init();
-  $("driveSearchReportKoconBtn").addEventListener("click",()=>searchReportFromDrive("kocon"));
-  $("driveSearchReportSubjectBtn").addEventListener("click",()=>searchReportFromDrive("subject"));
+  $("driveSearchReportBtn").addEventListener("click",searchReportFromDrive);
   $("driveImportEstimateBtn").addEventListener("click",importEstimateFromDrive);
   const _app=document.querySelector(".app");
   _app.addEventListener("input",autosave); _app.addEventListener("change",autosave);
