@@ -222,7 +222,6 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     </section>
 
     <div class="actions"><label class="devmode">出力先<select id="devMode"><option value="mobile">携帯（共有）</option><option value="pc">パソコン（保存）</option></select></label>
-      <button class="btn btn-navy big" id="genBtn">見積書を作成 / 更新</button>
       <button class="btn btn-blue big" id="printBtn">印刷</button>
       <button class="btn btn-blue big" id="bothBtn">PDF、データ両方保存</button>
       <div class="split2">
@@ -234,7 +233,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
   <main class="preview">
     <div class="bar"><button class="btn btn-ghost" id="addBlank" style="width:auto;padding:7px 12px;">＋ 明細に空白行を追加</button><span class="tip">各欄はクリックで直接修正できます。</span></div>
-    <div id="sheet" class="sheet"><div class="empty">左の項目を入力して<br>「見積書を作成」を押してください</div></div>
+    <div id="sheet" class="sheet"><div class="empty">左の入力内容が<br>ここに自動反映されます</div></div>
   </main>
 </div>
 
@@ -777,7 +776,7 @@ async function autoCalc(p){ const st=$(p+"_status"),key=$("apiKey").value.trim()
   st.textContent="取得中…";st.className="status";$(p+"_auto").disabled=true;
   try{ const r=await googleRoute(origin,dest,key); $(p+"_km").value=r.km.toFixed(1);$(p+"_h").value=r.h.toFixed(1);$(p+"_toll").value=Math.round(r.toll);
     st.innerHTML=`片道約${r.km.toFixed(1)}km／約${r.h.toFixed(1)}h／高速${r.hasToll?yen(r.toll):"なし"}（片道）。`;st.className="status ok";
-    if(driveAutosaveController)driveAutosaveController.markDirty();
+    scheduleLivePreview(); if(driveAutosaveController)driveAutosaveController.markDirty();
   }catch(e){ st.innerHTML="自動取得に失敗（"+esc(e.message)+"）。下のリンクで手入力を。";st.className="status err"; } finally{$(p+"_auto").disabled=false;} }
 function openMap(p,kind){ const o=originAddr(p),d=$("address").value.trim(); if(!o){alert("出発地の住所を入力してください。");return;} if(!d){alert("作業場所の住所を入力してください。");return;}
   const u=kind==="yahoo"?`https://map.yahoo.co.jp/route/car?from=${encodeURIComponent(o)}&to=${encodeURIComponent(d)}`:`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&travelmode=driving`; window.open(u,"_blank"); }
@@ -846,6 +845,9 @@ function fitSheet(){ const sheet=$("sheet"); if(!sheet||sheet.querySelector(".em
 function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt").forEach(c=>sub+=parseNum(c.textContent)); const total=taxInclude(sub),tax=total-Math.round(sub);
   if($("subCell")){$("subCell").textContent=num(sub);$("taxCell").textContent=num(tax);$("totalCell").textContent=num(total);$("topTotal").textContent=yen(total);} }
 function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); fitSheet(); }
+
+let _livePreviewT=null;
+function scheduleLivePreview(){ clearTimeout(_livePreviewT); _livePreviewT=setTimeout(renderSheet,250); }
 
 const SIMPLE_IDS=["mKocon","client","subject","workDate","dateType","address","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_tripsWe","workFee","lodgeUnit"];
 function collectState(){ const s={fields:{},parts:partRowsRaw(),customs:customRowsRaw(),wdays:wdayRows(),lodges:lodgeRows()}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); const sh=$("sheet"); if(sh&&!sh.querySelector(".empty"))s.sheetHTML=sh.innerHTML; return s; }
@@ -957,11 +959,17 @@ document.addEventListener("DOMContentLoaded",()=>{
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   $("tollSearch").addEventListener("click",()=>window.open("https://www.driveplaza.com/dp/SearchTop","_blank"));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow()); $("addWday").addEventListener("click",()=>addWdayRow()); $("addLodge").addEventListener("click",()=>{ addLodgeRow(); refreshLodge(); });
-  $("genBtn").addEventListener("click",renderSheet); $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth); $("pdfBtn").addEventListener("click",savePdfOnly); $("dataBtn").addEventListener("click",saveDataOnly);
+  $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth); $("pdfBtn").addEventListener("click",savePdfOnly); $("dataBtn").addEventListener("click",saveDataOnly);
   (function initDevMode(){ let saved=null; try{ saved=localStorage.getItem("kkmt_devmode"); }catch(e){} const guess=(navigator.canShare && matchMedia("(pointer:coarse)").matches)?"mobile":"pc"; $("devMode").value=(saved==="pc"||saved==="mobile")?saved:guess; applyDeviceMode(); $("devMode").addEventListener("change",applyDeviceMode); })();
   $("addBlank").addEventListener("click",addBlankRow);
   syncWE(); syncBase();
   restoreDraft();
+  if($("sheet").querySelector(".empty"))renderSheet();
+  const liveForm=document.querySelector(".form");
+  liveForm.addEventListener("input",scheduleLivePreview);
+  liveForm.addEventListener("change",scheduleLivePreview);
+  const liveMutationIds=new Set(["addCustom","addPart","addWday","addLodge"]);
+  liveForm.addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&(liveMutationIds.has(b.id)||b.matches(".del")))setTimeout(scheduleLivePreview,0); });
   driveAutosaveController=KKMTDrive.createAutosaveController({
     docType:"estimate",
     rootElement:document.querySelector(".app"),
