@@ -171,6 +171,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <section class="card drive-card">
       <h2>高コン／見積もり番号・Google Drive</h2>
       <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
+      <label>件名<input id="subject" type="text" placeholder="例）研磨機 クラッチ取り外し"></label>
       <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>Google Driveに接続</button>
       <div class="drive-search">
         <p class="foot" style="margin-top:0;"><b>検索方法</b></p>
@@ -179,7 +180,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
           <label><input type="radio" name="reportDriveSearchMode" id="driveSearchModeSubject" value="subject">件名</label>
         </div>
         <button type="button" class="btn btn-google" id="driveSearchReportBtn">報告書を検索</button>
-        <p class="foot">高コン番号は上の入力欄、件名は基本情報の件名欄を使用します。</p>
+        <p class="foot">高コン番号・件名は上の入力欄を使用します。</p>
       </div>
       <button type="button" class="btn btn-google" id="driveImportEstimateBtn" style="margin-top:8px;">Driveから見積書を取り込む</button>
       <p class="drive-status" id="driveStatus" role="status" aria-live="polite">Google認証を準備中…</p>
@@ -187,7 +188,6 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
     <section class="card">
       <h2><span class="n">1</span>基本情報・相手先</h2>
-      <label>件名<input id="subject" type="text" placeholder="例）研磨機 クラッチ取り外し"></label>
       <div class="hidden"><input id="client" type="text"><input id="workDate" type="date"></div>
 
       <p class="foot" style="margin-top:8px;"><b>ご請求先</b>（請求書の宛先）</p>
