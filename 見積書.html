@@ -61,6 +61,7 @@ input:focus,select:focus{ outline:2px solid var(--navy2); border-color:var(--nav
 .drive-status{ font-size:11px; margin-top:8px; min-height:16px; line-height:1.45; color:#5f6b7a; }
 .drive-status.ok{ color:var(--ok); } .drive-status.err{ color:var(--accent); }
 .drive-card button:disabled{ opacity:.55; cursor:wait; }
+.drive-search{ margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
 .hidden{ display:none; } .we-wrap{ display:none; } .we-head{ color:#b8860b; }
 details{ margin-top:10px; font-size:11.5px; } details summary{ cursor:pointer; color:var(--navy2); font-weight:700; }
 details .help{ margin-top:6px; line-height:1.6; color:#4a5663; } details .help a{ color:var(--google); }
@@ -111,7 +112,12 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
       <h2>高コン／見積もり番号・Google Drive</h2>
       <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
       <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>Google Driveに接続</button>
-      <button type="button" class="btn btn-google" id="driveLoadEstimateBtn" style="margin-top:8px;">Driveから見積書を取得</button>
+      <div class="drive-search">
+        <label>高コン検索<input id="driveSearchKocon" data-drive-search type="text" autocomplete="off" placeholder="高コン番号を入力"></label>
+        <button type="button" class="btn btn-google" id="driveSearchEstimateKoconBtn" style="margin-top:8px;">高コンで見積もり検索</button>
+        <label style="margin-top:10px;">件名検索<input id="driveSearchSubject" data-drive-search type="text" autocomplete="off" placeholder="件名を入力"></label>
+        <button type="button" class="btn btn-google" id="driveSearchEstimateSubjectBtn" style="margin-top:8px;">件名で見積もり検索</button>
+      </div>
       <p class="drive-status" id="driveStatus" role="status" aria-live="polite">Google認証を準備中…</p>
     </section>
 
@@ -695,7 +701,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="google-drive.js?v=20260730-3"></script>
+<script src="google-drive.js?v=20260730-4"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -851,7 +857,7 @@ function scheduleLivePreview(){ clearTimeout(_livePreviewT); _livePreviewT=setTi
 
 const SIMPLE_IDS=["mKocon","client","subject","workDate","dateType","address","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_tripsWe","workFee","lodgeUnit"];
 function collectState(){ const s={fields:{},parts:partRowsRaw(),customs:customRowsRaw(),wdays:wdayRows(),lodges:lodgeRows()}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); const sh=$("sheet"); if(sh&&!sh.querySelector(".empty"))s.sheetHTML=sh.innerHTML; return s; }
-function saveState(){ const s=collectState(); const name=((s.fields.client||"見積").replace(/[\\\/:*?"<>|]/g,"_"))+"_"+(s.fields.workDate||"")+"_見積もり";
+function saveState(){ const s=collectState(); const name=fileBaseName();
   const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name+".json"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
 function applyState(s){ if(!s)return; const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
@@ -867,22 +873,26 @@ function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ 
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
 function resetAll(){ if(!confirm("すべての入力を消去します。APIキーは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
-async function loadEstimateFromDrive(){
-  const kocon=($("mKocon").value||"").trim();
-  if(!kocon){ alert("先に高コン／見積もり番号を入力してください。"); return; }
+async function searchEstimateFromDrive(searchType){
+  const byKocon=searchType==="kocon";
+  const input=$(byKocon?"driveSearchKocon":"driveSearchSubject");
+  const term=(input.value||"").trim();
+  if(!term){ alert(byKocon?"検索する高コン番号を入力してください。":"検索する件名を入力してください。"); return; }
   if(!KKMTDrive.isConnected()){ if(driveAutosaveController)driveAutosaveController.setStatus("先にGoogle Driveへ接続してください。","error"); return; }
-  if(!confirm(`高コン「${kocon}」の保存済み見積書を取得し、現在の入力内容を置き換えますか？`))return;
-  if(driveAutosaveController)driveAutosaveController.setStatus("見積書をGoogle Driveから取得中…");
+  const label=byKocon?`高コン「${term}」`:`件名「${term}」`;
+  if(!confirm(`${label}の保存済み見積もりを取得し、現在の入力内容を置き換えますか？`))return;
+  if(driveAutosaveController)driveAutosaveController.setStatus("見積もりをGoogle Driveから検索中…");
   try{
-    const estimate=await KKMTDrive.loadJson({kocon,docType:"estimate"});
-    if(!estimate){ driveAutosaveController.setStatus(`高コン「${kocon}」の見積書が見つかりません。`,"error"); return; }
+    const estimate=await KKMTDrive.loadJson(byKocon?{kocon:term,docType:"estimate"}:{subject:term,docType:"estimate"});
+    if(!estimate){ driveAutosaveController.setStatus(`${label}の見積もりが見つかりません。`,"error"); return; }
     applyState(estimate);
-    $("mKocon").value=kocon;
-    await driveAutosaveController.adoptCurrentKocon({confirmed:true,save:false});
-    driveAutosaveController.setStatus("見積書を取得しました。","ok");
+    if(byKocon&&!$("mKocon").value)$("mKocon").value=term;
+    if(!byKocon&&!$("subject").value)$("subject").value=term;
+    await driveAutosaveController.adoptCurrentKocon({confirmed:!!$("mKocon").value,save:false});
+    driveAutosaveController.setStatus(`${label}の見積もりを取得しました。`,"ok");
   }catch(error){
     console.error("Estimate load failed",error);
-    driveAutosaveController.setStatus("見積書を取得できませんでした。","error");
+    driveAutosaveController.setStatus("見積もりを取得できませんでした。","error");
   }
 }
 
@@ -897,7 +907,7 @@ async function autoLoadEstimateFromDrive({kocon,isConnected,setStatus}){
   return true;
 }
 
-function fileBaseName(){ const kocon=($("mKocon").value||"").trim(); const company=($("client").value.trim()||"御見積書"); return [...[kocon,company].filter(Boolean),"見積もり"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
+function fileBaseName(){ const kocon=($("mKocon").value||"").trim(); const subject=($("subject").value||"件名未入力").trim(); return [...[kocon,subject].filter(Boolean),"見積もり"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
 async function buildPdf(){
   if($("sheet").querySelector(".empty")) renderSheet();
   fitSheet();
@@ -985,13 +995,15 @@ document.addEventListener("DOMContentLoaded",()=>{
     docType:"estimate",
     rootElement:document.querySelector(".app"),
     koconInput:$("mKocon"),
+    fallbackInput:$("subject"),
     statusElement:$("driveStatus"),
     connectButton:$("driveConnectBtn"),
     collectState,
     onKoconConfirmed:autoLoadEstimateFromDrive
   });
   driveAutosaveController.init();
-  $("driveLoadEstimateBtn").addEventListener("click",loadEstimateFromDrive);
+  $("driveSearchEstimateKoconBtn").addEventListener("click",()=>searchEstimateFromDrive("kocon"));
+  $("driveSearchEstimateSubjectBtn").addEventListener("click",()=>searchEstimateFromDrive("subject"));
   const _app=document.querySelector(".app");
   _app.addEventListener("input",autosave); _app.addEventListener("change",autosave);
   $("resetAllBtn").addEventListener("click",resetAll);
