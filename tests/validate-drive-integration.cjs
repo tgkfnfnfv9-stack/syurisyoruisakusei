@@ -45,6 +45,14 @@ assert.doesNotMatch(drive, /const results = await flushPending\(\)/);
 
 const estimateApp = inlineScripts(estimate).at(-1);
 const reportApp = inlineScripts(report).at(-1);
+const estimateDriveCard = estimate.match(/<section class="card drive-card">[\s\S]*?<\/section>/);
+const reportDriveCard = report.match(/<section class="card drive-card">[\s\S]*?<\/section>/);
+assert.ok(estimateDriveCard, "estimate Drive card must exist");
+assert.ok(reportDriveCard, "report Drive card must exist");
+assert.match(estimateDriveCard[0], /id="mKocon"[\s\S]*id="subject"/);
+assert.match(reportDriveCard[0], /id="mKocon"[\s\S]*id="subject"/);
+assert.match(estimateDriveCard[0], /高コン番号・件名は上の入力欄を使用します。/);
+assert.match(reportDriveCard[0], /高コン番号・件名は上の入力欄を使用します。/);
 assert.doesNotMatch(estimateApp, /setInterval\s*\(/);
 assert.doesNotMatch(reportApp, /setInterval\s*\(/);
 assert.match(estimateApp, /docType:"estimate"/);
