@@ -147,17 +147,17 @@
 
   function centralJsonp(parameters) {
     if (!CONFIG.centralBackendUrl) {
-      return Promise.reject(new DriveError("Dean共通Driveの接続先が設定されていません。"));
+      return Promise.reject(new DriveError("共通Driveの接続先が設定されていません。"));
     }
     if (!global.document || !global.document.createElement) {
-      return Promise.reject(new DriveError("Dean共通Driveの通信を開始できません。"));
+      return Promise.reject(new DriveError("共通Driveの通信を開始できません。"));
     }
     return new Promise((resolve, reject) => {
       const callback = `__kkmtCentralDrive${Date.now()}_${++jsonpSequence}`;
       const script = global.document.createElement("script");
       const timeout = global.setTimeout(() => {
         cleanup();
-        reject(new DriveError("Dean共通Driveの応答がありません。Googleへログイン後、もう一度お試しください。"));
+        reject(new DriveError("共通Driveの応答がありません。上の「Googleにログイン」を押した後、もう一度お試しください。"));
       }, 15000);
       const cleanup = () => {
         global.clearTimeout(timeout);
@@ -167,7 +167,7 @@
       global[callback] = response => {
         cleanup();
         if (!response || response.ok !== true) {
-          reject(new DriveError((response && response.error) || "Dean共通Driveでエラーが発生しました。"));
+          reject(new DriveError((response && response.error) || "共通Driveでエラーが発生しました。"));
           return;
         }
         resolve(response.result);
@@ -175,7 +175,7 @@
       script.async = true;
       script.onerror = () => {
         cleanup();
-        reject(new DriveError("Dean共通Driveへ接続できません。Googleへログインしているか確認してください。"));
+        reject(new DriveError("共通Driveへ接続できません。上の「Googleにログイン」を押してください。"));
       };
       const params = new URLSearchParams(Object.assign({}, parameters, {
         pin: CONFIG.centralSharedPin,
@@ -189,7 +189,7 @@
   async function centralPing() {
     const result = await centralJsonp({ action: "ping" });
     centralConnected = !!(result && result.connected);
-    if (!centralConnected) throw new DriveError("Dean共通Driveへ接続できませんでした。");
+    if (!centralConnected) throw new DriveError("共通Driveへ接続できませんでした。");
     return result;
   }
 
@@ -234,7 +234,7 @@
       docType
     });
     if (JSON.stringify(loaded) !== JSON.stringify(data)) {
-      throw new DriveError("Dean共通Driveへの保存確認に失敗しました。");
+      throw new DriveError("共通Driveへの保存確認に失敗しました。");
     }
     centralConnected = true;
     return { ok: true };
@@ -714,22 +714,22 @@
           if (!current.kocon && !canSaveBySubject) {
             setStatus(
               isConnected()
-                ? (docType === "estimate" ? "Dean共通Drive接続済み（高コンまたは件名を入力すると自動保存）" : "Dean共通Drive接続済み（高コンを入力すると自動保存）")
-                : (docType === "estimate" ? "高コンまたは件名を入力するとDean共通Driveへ自動保存できます。" : "高コンを入力するとDean共通Driveへ自動保存できます。"),
+                ? (docType === "estimate" ? "共通Drive接続済み（高コンまたは件名を入力すると自動保存）" : "共通Drive接続済み（高コンを入力すると自動保存）")
+                : (docType === "estimate" ? "高コンまたは件名を入力すると共通Driveへ自動保存できます。" : "高コンを入力すると共通Driveへ自動保存できます。"),
               isConnected() ? "ok" : ""
             );
             continue;
           }
           if (!isConnected()) {
             const stored = storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json);
-            setStatus(stored ? "Dean共通Drive未接続（端末内へ一時保存済み）" : "Dean共通Drive未接続（端末内への保存に失敗）", stored ? "" : "error");
+            setStatus(stored ? "共通Drive未接続（端末内へ一時保存済み）" : "共通Drive未接続（端末内への保存に失敗）", stored ? "" : "error");
             continue;
           }
           if (lastSavedJson.get(currentKey) === current.json) {
             removePending(docType, current.kocon, current.subject);
             continue;
           }
-          setStatus(`${label}をDean共通Driveへ保存中…`);
+          setStatus(`${label}を共通Driveへ保存中…`);
           try {
             await saveJson({
               kocon: current.kocon,
@@ -753,12 +753,12 @@
           } catch (error) {
             if (!skipPagehideSave) storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json);
             if (error instanceof DriveError && error.status === 401) {
-              connectButton.textContent = "Dean共通Driveに接続";
+              connectButton.textContent = "共通Driveに接続";
               setStatus("接続期限が切れました。再接続してください（端末内へ一時保存済み）", "error");
             } else {
               setStatus("保存に失敗しました。端末内へ一時保存しました", "error");
             }
-            console.error("Dean central Drive autosave failed", error);
+            console.error("Central Drive autosave failed", error);
           }
         }
       })().finally(() => {
@@ -796,8 +796,8 @@
         activeKocon = next;
         if (!next) {
           setStatus(docType === "estimate"
-            ? "高コンがなくても、件名でDean共通Driveへ自動保存できます。"
-            : "高コンを入力するとDean共通Driveへ自動保存できます。");
+            ? "高コンがなくても、件名で共通Driveへ自動保存できます。"
+            : "高コンを入力すると共通Driveへ自動保存できます。");
           if (save && docType === "estimate" && normalizeSubject(fallbackInput && fallbackInput.value)) {
             await markDirty({ immediate: true });
           }
@@ -850,12 +850,12 @@
     }
 
     async function handleConnect() {
-      setStatus("Dean共通Driveへ接続中…");
+      setStatus("共通Driveへ接続中…");
       connectButton.disabled = true;
       try {
         await connect();
-        connectButton.textContent = "Dean共通Drive接続済み";
-        setStatus("Dean共通Driveへ接続しました。未同期データを確認中…", "ok");
+        connectButton.textContent = "共通Drive接続済み";
+        setStatus("共通Driveへ接続しました。未同期データを確認中…", "ok");
         const results = await flushPending(docType);
         const failures = results.filter(result => !result.ok);
         if (failures.length) {
@@ -863,12 +863,12 @@
         } else if (results.length) {
           setStatus(`${results.length}件の未同期データを保存しました。`, "ok");
         } else {
-          setStatus("Dean共通Driveへ接続済み", "ok");
+          setStatus("共通Driveへ接続済み", "ok");
         }
         await confirmCurrentKocon();
       } catch (error) {
-        console.error("Dean central Drive connection failed", error);
-        setStatus("Dean共通Driveへ接続できませんでした。Googleへログイン後、もう一度お試しください。", "error");
+        console.error("Central Drive connection failed", error);
+        setStatus("共通Driveへ接続できません。上の「Googleにログイン」を押した後、もう一度お試しください。", "error");
       } finally {
         connectButton.disabled = false;
       }
@@ -888,19 +888,19 @@
 
     function init() {
       if (!koconInput || !connectButton || typeof collectState !== "function") {
-        throw new Error("Dean共通Drive自動保存の初期設定が不足しています。");
+        throw new Error("共通Drive自動保存の初期設定が不足しています。");
       }
 
       connectButton.disabled = true;
       prepare().then(() => {
         connectButton.disabled = false;
         if (!isConnected()) {
-          connectButton.textContent = "Dean共通Driveに接続";
-          setStatus("Dean共通Drive未接続");
+          connectButton.textContent = "共通Driveに接続";
+          setStatus("共通Drive未接続");
           return;
         }
-        connectButton.textContent = "Dean共通Drive接続済み";
-        setStatus("Dean共通Drive接続済み。未同期データを確認中…", "ok");
+        connectButton.textContent = "共通Drive接続済み";
+        setStatus("共通Drive接続済み。未同期データを確認中…", "ok");
         flushPending(docType).then(async results => {
           const failures = results.filter(result => !result.ok);
           if (failures.length) {
@@ -908,17 +908,19 @@
           } else if (results.length) {
             setStatus(`${results.length}件の未同期${label}データを保存しました。`, "ok");
           } else {
-            setStatus("Dean共通Drive接続済み", "ok");
+            setStatus("共通Drive接続済み", "ok");
           }
           await confirmCurrentKocon();
         }).catch(error => {
-          console.error("Dean central Drive session resume failed", error);
+          console.error("Central Drive session resume failed", error);
           setStatus("接続の再開に失敗しました。接続ボタンを押してください。", "error");
-          connectButton.textContent = "Dean共通Driveに接続";
+          connectButton.textContent = "共通Driveに接続";
         });
       }).catch(error => {
-        console.error("Dean central Drive failed to initialize", error);
-        setStatus("Dean共通Driveへ接続できません。Googleへログイン後、接続ボタンを押してください。", "error");
+        console.error("Central Drive failed to initialize", error);
+        connectButton.disabled = false;
+        connectButton.textContent = "共通Driveに接続";
+        setStatus("最初に上の「Googleにログイン」を押し、この画面へ戻って「共通Driveに接続」を押してください。", "error");
       });
       connectButton.addEventListener("click", handleConnect);
 
