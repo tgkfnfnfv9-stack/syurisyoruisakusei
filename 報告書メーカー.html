@@ -828,7 +828,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="google-drive.js"></script>
+<script src="google-drive.js?v=20260730-3"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -982,7 +982,7 @@ const SIMPLE_IDS=["client","subject","workDate","address","directUse","d_km","d_
 function collectState(){ const s={fields:{},parts:partRowsRaw(),customs:customRowsRaw(),lodges:lodgeRows(),work:getWorkRows(),workers:WORKERS,activeWorkers:ACTIVE.slice(),signature:sigDataURL}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); const sh=$("sheet"); if(sh&&!sh.querySelector(".empty"))s.sheetHTML=sh.innerHTML; return s; }
 function fileBaseName(){ const kocon=(($("mKocon")&&$("mKocon").value)||"").trim();
   const company=($("billName").value.trim()||$("client").value.trim()||"作業報告書");
-  return [kocon,company].filter(Boolean).join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
+  return [...[kocon,company].filter(Boolean),"報告書"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
 async function saveState(){ const s=collectState(); const name=fileBaseName()+".json";
   const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});
   const file=new File([blob],name,{type:"application/json"});
@@ -1027,6 +1027,17 @@ async function loadReportFromDrive(){
     console.error("Report load failed",error);
     driveAutosaveController.setStatus("報告書を取得できませんでした。","error");
   }
+}
+
+async function autoLoadReportFromDrive({kocon,isConnected,setStatus}){
+  if(!isConnected)return false;
+  setStatus(`高コン「${kocon}」の報告書を自動取得中…`);
+  const report=await KKMTDrive.loadJson({kocon,docType:"report"});
+  if(!report){ setStatus(`新しい報告書です。入力内容を報告書ファイルへ自動保存します。`,"ok"); return true; }
+  applyState(report);
+  $("mKocon").value=kocon;
+  setStatus("報告書を自動取得しました。","ok");
+  return true;
 }
 
 async function importEstimateFromDrive(){
@@ -1415,7 +1426,8 @@ document.addEventListener("DOMContentLoaded",()=>{
     koconInput:$("mKocon"),
     statusElement:$("driveStatus"),
     connectButton:$("driveConnectBtn"),
-    collectState
+    collectState,
+    onKoconConfirmed:autoLoadReportFromDrive
   });
   driveAutosaveController.init();
   $("driveLoadReportBtn").addEventListener("click",loadReportFromDrive);
