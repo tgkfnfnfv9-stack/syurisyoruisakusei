@@ -337,7 +337,6 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
     <textarea id="textareaMeasure" style="display:none"></textarea>
     <div class="actions"><label class="devmode">出力先<select id="devMode"><option value="mobile">携帯（共有）</option><option value="pc">パソコン（保存）</option></select></label>
-      <button class="btn btn-navy big" id="genBtn">報告書を作成 / 更新</button>
       <button class="btn btn-blue big" id="printBtn">印刷</button>
       <button class="btn btn-blue big" id="photoBtn">写真添付</button>
       <button class="btn btn-blue big" id="bothBtn">PDF、データ両方保存</button>
@@ -350,7 +349,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
   <main class="preview">
     <div class="bar"><span class="tip">各欄はクリックで直接修正できます。</span></div>
-    <div id="sheet" class="sheet"><div class="empty">左の項目を入力して<br>「報告書を作成」を押してください</div></div>
+    <div id="sheet" class="sheet"><div class="empty">左の入力内容が<br>ここに自動反映されます</div></div>
     <div id="sheetExtra"></div>
   </main>
 </div>
@@ -905,7 +904,7 @@ async function autoCalc(p){ const st=$(p+"_status"),key=$("apiKey").value.trim()
   st.textContent="取得中…";st.className="status";$(p+"_auto").disabled=true;
   try{ const r=await googleRoute(origin,dest,key); $(p+"_km").value=r.km.toFixed(1);$(p+"_h").value=r.h.toFixed(1);$(p+"_toll").value=Math.round(r.toll);
     st.innerHTML=`片道約${r.km.toFixed(1)}km／約${r.h.toFixed(1)}h／高速${r.hasToll?yen(r.toll):"なし"}（片道）。`;st.className="status ok";
-    if(driveAutosaveController)driveAutosaveController.markDirty();
+    scheduleLivePreview(); if(driveAutosaveController)driveAutosaveController.markDirty();
   }catch(e){ st.innerHTML="自動取得に失敗（"+esc(e.message)+"）。下のリンクで手入力を。";st.className="status err"; } finally{$(p+"_auto").disabled=false;} }
 function openMap(p,kind){ const o=originAddr(p),d=$("address").value.trim(); if(!o){alert("出発地の住所を入力してください。");return;} if(!d){alert("作業場所の住所を入力してください。");return;}
   const u=kind==="yahoo"?`https://map.yahoo.co.jp/route/car?from=${encodeURIComponent(o)}&to=${encodeURIComponent(d)}`:`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&travelmode=driving`; window.open(u,"_blank"); }
@@ -1172,9 +1171,9 @@ function renderReport(){
         <tr><th colspan="4">日付</th><th colspan="7">内容</th><th colspan="7">時間帯</th><th colspan="3">${esc(workers[0])}</th><th colspan="3">${esc(workers[1])}</th><th colspan="3">${esc(workers[2])}</th><th colspan="3">${esc(workers[3])}</th><th colspan="3">合計</th><td class="lbl" colspan="4">作業費</td><td class="num rc" colspan="8" contenteditable>${z(C.workFee)}</td></tr>
         ${body}
         <tr><td colspan="27"></td><td class="lbl" colspan="3">合計</td><td class="num" colspan="3">${totH>0?num(totH):""}</td><td class="lbl" colspan="4">合計</td><td class="num" colspan="8" id="rpTotal"><b>${C.reportTotal>0?num(C.reportTotal):""}</b></td></tr>
-        <tr class="dl2"><td class="lbll vtop" colspan="9">不具合内容：</td><td colspan="36" class="vtop" contenteditable>${esc($("trouble").value)}</td></tr>
-        <tr class="dl2"><td class="lbll vtop" colspan="9">原因：</td><td colspan="36" class="vtop" contenteditable>${esc($("cause").value)}</td></tr>
-        <tr class="dl2"><td class="lbll vtop" colspan="9">処置：</td><td colspan="36" class="vtop" contenteditable>${$("custSupply").checked?"部品お客様支給"+($("action").value?"<br>":""):""}${esc($("action").value)}</td></tr>
+        <tr class="dl2"><td class="lbll vtop" colspan="9">不具合内容：</td><td colspan="36" class="vtop" contenteditable>${esc($("trouble").value).replace(/\n/g,"<br>")}</td></tr>
+        <tr class="dl2"><td class="lbll vtop" colspan="9">原因：</td><td colspan="36" class="vtop" contenteditable>${esc($("cause").value).replace(/\n/g,"<br>")}</td></tr>
+        <tr class="dl2"><td class="lbll vtop" colspan="9">処置：</td><td colspan="36" class="vtop" contenteditable>${$("custSupply").checked?"部品お客様支給"+($("action").value?"<br>":""):""}${esc($("action").value).replace(/\n/g,"<br>")}</td></tr>
         <tr class="dl dlf"><td colspan="38" class="lft vtop">部品詳細：${pline(C.parts.map(p=>[p.name,p.amt]))}</td><td class="lbl" colspan="2">合計</td><td class="num" colspan="5">${z(C.partsTotal)}</td></tr>
         <tr class="dl dlf"><td colspan="38" class="lft vtop">交通費詳細：${dline([...C.dT,...C.dV,...C.dK])}</td><td class="lbl" colspan="2">合計</td><td class="num" colspan="5">${z(C.transport+C.travel+C.toll)}</td></tr>
         <tr class="dl dlf"><td colspan="38" class="lft vtop">宿泊費詳細：${dline(C.dL)}</td><td class="lbl" colspan="2">合計</td><td class="num" colspan="5">${z(C.lodging)}</td></tr>
@@ -1185,6 +1184,9 @@ function renderReport(){
   document.querySelectorAll("#sheet .rc").forEach(c=>c.addEventListener("input",recalcReport));
   renderOverflow(); fitAllCells();
 }
+let _livePreviewT=null;
+function scheduleLivePreview(){ clearTimeout(_livePreviewT); _livePreviewT=setTimeout(renderReport,300); }
+
 /* 8日目以降・5人目以降を「作業表のみ」の続きページに送る（費用・合計は1枚目のみ） */
 function renderOverflow(){ const ex=$("sheetExtra"); if(!ex)return; ex.innerHTML="";
   const W=getWorkRows(); const workers=[...new Set(W.flatMap(w=>(w.people||[]).map(p=>p.worker)).filter(Boolean))];
@@ -1268,9 +1270,9 @@ function makePad(cv,onEnd){ const ctx=cv.getContext("2d");
 }
 let mainPad=null, ssPad=null;
 function updateSigState(){ const el=$("sigState"); if(el)el.textContent=sigDataURL?"✅ サイン取得済み（サイン画面で修正できます）":"— サイン未取得"; }
-function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png"); updateSigState(); if(driveAutosaveController)driveAutosaveController.markDirty();});
+function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png"); updateSigState(); scheduleLivePreview(); if(driveAutosaveController)driveAutosaveController.markDirty();});
     setTimeout(()=>mainPad.resize(),60); window.addEventListener("resize",()=>{ if(mainPad){mainPad.resize(); if(sigDataURL)mainPad.draw(sigDataURL);} }); }
-  const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear(); sigDataURL=""; updateSigState(); });
+  const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear(); sigDataURL=""; updateSigState(); scheduleLivePreview(); });
   updateSigState(); }
 function openSignScreen(){
   $("ssClient").textContent=($("billName").value||$("client").value).trim(); $("ssSubject").textContent=$("subject").value.trim();
@@ -1365,7 +1367,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }catch(e){ console.error(e); alert("データの保存に失敗しました。もう一度お試しください。"); }
   }
   function doPrint(){ if($("sheet").querySelector(".empty")) renderReport(); fitAllCells(); setTimeout(()=>window.print(),80); }
-  $("genBtn").addEventListener("click",renderReport); $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth);
+  $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth);
   $("pdfBtn").addEventListener("click",exportPDF); $("dataBtn").addEventListener("click",saveDataOnly);
   let IS_PC=false;
   async function pcSaveOne(blob,name,mime,ext){ if(!(IS_PC && window.showSaveFilePicker)) return false;
@@ -1401,6 +1403,12 @@ document.addEventListener("DOMContentLoaded",()=>{
   ["d_trans","d_trav","d_ktoll"].forEach(id=>$(id).addEventListener("input",()=>{ const el=$(id); el.dataset.edited=el.value.trim()===""?"":"1"; }));
   syncWE(); syncBase(); refreshDirect();
   restoreDraft();
+  if($("sheet").querySelector(".empty"))renderReport();
+  const liveForm=document.querySelector(".form");
+  liveForm.addEventListener("input",scheduleLivePreview);
+  liveForm.addEventListener("change",scheduleLivePreview);
+  const liveMutationIds=new Set(["addLodge","addCustom","addPart","addWorker","addWork"]);
+  liveForm.addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&(liveMutationIds.has(b.id)||b.matches(".del,.pdel")))setTimeout(scheduleLivePreview,0); });
   driveAutosaveController=KKMTDrive.createAutosaveController({
     docType:"report",
     rootElement:document.querySelector(".app"),
