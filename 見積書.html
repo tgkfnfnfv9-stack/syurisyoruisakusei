@@ -707,7 +707,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
 </script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="google-drive.js?v=20260730-4"></script>
+<script src="google-drive.js?v=20260730-5"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -876,6 +876,7 @@ function applyState(s){ if(!s)return; const fields={...(s.fields||{})}; if(!fiel
 const DRAFT_KEY="kkmt_est_draft";
 let _autosaveT=null;
 function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){} },400); }
+function autosaveFromEvent(event){ const id=event&&event.target&&event.target.id; if(id==="mKocon"||id==="subject")return; autosave(); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
 function resetAll(){ if(!confirm("すべての入力を消去します。APIキーは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
@@ -1010,7 +1011,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   driveAutosaveController.init();
   $("driveSearchEstimateBtn").addEventListener("click",searchEstimateFromDrive);
   const _app=document.querySelector(".app");
-  _app.addEventListener("input",autosave); _app.addEventListener("change",autosave);
+  _app.addEventListener("input",autosaveFromEvent); _app.addEventListener("change",autosaveFromEvent);
   $("resetAllBtn").addEventListener("click",resetAll);
 });
 </script>
