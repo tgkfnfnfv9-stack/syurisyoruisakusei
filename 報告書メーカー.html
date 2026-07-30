@@ -1049,7 +1049,7 @@ async function autoLoadReportFromDrive({kocon,isConnected,setStatus}){
   if(!isConnected)return false;
   setStatus(`高コン「${kocon}」の報告書を自動取得中…`);
   const report=await KKMTDrive.loadJson({kocon,docType:"report"});
-  if(!report){ setStatus(`新しい報告書です。入力内容を報告書ファイルへ自動保���します。`,"ok"); return true; }
+  if(!report){ setStatus(`新しい報告書です。入力内容を報告書ファイルへ自動保存します。`,"ok"); return true; }
   applyState(report);
   $("mKocon").value=kocon;
   setStatus("報告書を自動取得しました。","ok");
