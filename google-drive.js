@@ -6,7 +6,7 @@
     clientId: "568409413492-30m6042kemj3vrt2hog6joh2g2p7lcei.apps.googleusercontent.com",
     scope: "https://www.googleapis.com/auth/drive.file",
     centralBackendUrl: CENTRAL_OVERRIDE.url === undefined
-      ? "https://script.google.com/macros/s/AKfycbwv8C_-IKb3eoQARwYuumCohba_z5Lyq4t3aKZvYPTbbtMTz3VvEhOuhnFaY-j1SODa/exec"
+      ? "https://script.google.com/macros/s/AKfycbxTk0OBNZxgn5u1rYDUYnNQwG27sZ2oL_VyhcIVEChKAb3z9nvErLejaH_94N-5iYq3/exec"
       : String(CENTRAL_OVERRIDE.url || ""),
     centralSharedPin: String(CENTRAL_OVERRIDE.pin || "ad5d1bc7"),
     rootFolderName: "小林機械 書類データ",
@@ -157,7 +157,7 @@
       const script = global.document.createElement("script");
       const timeout = global.setTimeout(() => {
         cleanup();
-        reject(new DriveError("共通Driveの応答がありません。上の「Googleにログイン」を押した後、もう一度お試しください。"));
+        reject(new DriveError("共通Driveの応答がありません。ページを再読み込みして、もう一度お試しください。"));
       }, 15000);
       const cleanup = () => {
         global.clearTimeout(timeout);
@@ -175,7 +175,7 @@
       script.async = true;
       script.onerror = () => {
         cleanup();
-        reject(new DriveError("共通Driveへ接続できません。上の「Googleにログイン」を押してください。"));
+        reject(new DriveError("共通Driveへ接続できません。通信環境を確認して、もう一度お試しください。"));
       };
       const params = new URLSearchParams(Object.assign({}, parameters, {
         pin: CONFIG.centralSharedPin,
@@ -868,7 +868,7 @@
         await confirmCurrentKocon();
       } catch (error) {
         console.error("Central Drive connection failed", error);
-        setStatus("共通Driveへ接続できません。上の「Googleにログイン」を押した後、もう一度お試しください。", "error");
+        setStatus("共通Driveへ接続できません。通信環境を確認して、もう一度お試しください。", "error");
       } finally {
         connectButton.disabled = false;
       }
@@ -920,7 +920,7 @@
         console.error("Central Drive failed to initialize", error);
         connectButton.disabled = false;
         connectButton.textContent = "共通Driveに接続";
-        setStatus("最初に上の「Googleにログイン」を押し、この画面へ戻って「共通Driveに接続」を押してください。", "error");
+        setStatus("共通Driveへ接続できません。ページを再読み込みするか、接続ボタンを押してください。", "error");
       });
       connectButton.addEventListener("click", handleConnect);
 
