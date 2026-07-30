@@ -60,6 +60,12 @@ async function driveFetch(url, options = {}) {
     const file = files.get(metadataMatch[1]);
     return file ? jsonResponse(file) : jsonResponse({ error: { message: "not found" } }, 404);
   }
+  if (metadataMatch && method === "PATCH") {
+    const file = files.get(metadataMatch[1]);
+    if (!file) return jsonResponse({ error: { message: "not found" } }, 404);
+    Object.assign(file, JSON.parse(options.body));
+    return jsonResponse(file);
+  }
 
   if (parsed.pathname === "/drive/v3/files" && method === "POST") {
     const metadata = JSON.parse(options.body);
@@ -145,8 +151,24 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js")
 
   const documents = [...files.values()].filter(file => file.appProperties);
   assert.equal(documents.length, 2);
-  assert.equal(documents.find(file => file.appProperties.docType === "estimate").name, "高コン12345_見積書.json");
+  assert.equal(documents.find(file => file.appProperties.docType === "estimate").name, "高コン12345_見積もり.json");
   assert.equal(documents.find(file => file.appProperties.docType === "report").name, "高コン12345_報告書.json");
+  assert.equal(documents.find(file => file.appProperties.docType === "estimate").data._kkmtDocumentType, "estimate");
+  assert.equal(documents.find(file => file.appProperties.docType === "report").data._kkmtDocumentType, "report");
+  assert.equal([...files.values()].some(file => file.mimeType.includes("folder") && file.name === "見積もり"), true);
+  assert.equal([...files.values()].some(file => file.mimeType.includes("folder") && file.name === "報告書"), true);
+  await assert.rejects(
+    () => drive.saveJson({ kocon: "12345", docType: "other", data: {} }),
+    /不明な書類種別/
+  );
+  await drive.saveJson({ kocon: "wrong-type", docType: "report", data: { work: [] } });
+  const wrongTypeFile = documents.find(file => file.appProperties.kocon === "wrong-type") ||
+    [...files.values()].find(file => file.appProperties?.kocon === "wrong-type");
+  wrongTypeFile.data = { wdays: [] };
+  await assert.rejects(
+    () => drive.loadJson({ kocon: "wrong-type", docType: "report" }),
+    /別の種類の書類データ/
+  );
   assert.ok(![...storage.values()].some(value => value.includes("test-access-token")));
   assert.ok([...session.values()].some(value => value.includes("test-access-token")));
 

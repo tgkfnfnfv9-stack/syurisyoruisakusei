@@ -5,7 +5,8 @@
     clientId: "568409413492-30m6042kemj3vrt2hog6joh2g2p7lcei.apps.googleusercontent.com",
     scope: "https://www.googleapis.com/auth/drive.file",
     rootFolderName: "小林機械 書類データ",
-    estimateFolderName: "見積書",
+    estimateFolderName: "見積もり",
+    legacyEstimateFolderName: "見積書",
     reportFolderName: "報告書",
     schemaVersion: "1"
   });
@@ -16,6 +17,7 @@
   const FOLDER_CACHE_KEY = "kkmt_drive_folder_ids_v1";
   const PENDING_PREFIX = "kkmt_drive_pending_";
   const SESSION_TOKEN_KEY = "kkmt_drive_session_token_v1";
+  const DATA_TYPE_KEY = "_kkmtDocumentType";
 
   let accessToken = "";
   let accessTokenExpiresAt = 0;
@@ -35,6 +37,32 @@
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const normalizeKocon = value => String(value == null ? "" : value).trim();
+  function requireDocType(docType) {
+    if (!["estimate", "report"].includes(docType)) throw new DriveError("不明な書類種別です。");
+    return docType;
+  }
+  function stampDocumentType(data, docType) {
+    requireDocType(docType);
+    const stamped = data && typeof data === "object" && !Array.isArray(data) ? Object.assign({}, data) : { value: data };
+    stamped[DATA_TYPE_KEY] = docType;
+    return stamped;
+  }
+  function verifyDocumentType(data, docType) {
+    requireDocType(docType);
+    const inferred = data && typeof data === "object"
+      ? (Array.isArray(data.work) || "signature" in data || Array.isArray(data.workers)
+          ? "report"
+          : (Array.isArray(data.wdays) ? "estimate" : ""))
+      : "";
+    if (data && ((data[DATA_TYPE_KEY] && data[DATA_TYPE_KEY] !== docType) ||
+        (!data[DATA_TYPE_KEY] && inferred && inferred !== docType))) {
+      throw new DriveError("別の種類の書類データのため読み込みを中止しました。");
+    }
+    if (data && typeof data === "object" && !Array.isArray(data) && DATA_TYPE_KEY in data) {
+      delete data[DATA_TYPE_KEY];
+    }
+    return data;
+  }
   const escapeQuery = value => String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const pendingKey = (docType, kocon) =>
     `${PENDING_PREFIX}${docType}_${encodeURIComponent(normalizeKocon(kocon))}`;
@@ -258,13 +286,14 @@
   }
 
   async function getDocumentFolder(docType) {
-    if (!["estimate", "report"].includes(docType)) throw new DriveError("不明な書類種別です。");
+    requireDocType(docType);
     const rootId = await resolveFolder("root", CONFIG.rootFolderName, "root");
     const name = docType === "estimate" ? CONFIG.estimateFolderName : CONFIG.reportFolderName;
     return resolveFolder(docType, name, rootId);
   }
 
   async function findDocument(kocon, docType) {
+    requireDocType(docType);
     const normalized = normalizeKocon(kocon);
     if (!normalized) return null;
     const folderId = await getDocumentFolder(docType);
@@ -278,8 +307,31 @@
     return (await listFiles(query))[0] || null;
   }
 
+  async function findLegacyEstimateDocument(kocon) {
+    const normalized = normalizeKocon(kocon);
+    if (!normalized) return null;
+    const rootId = await resolveFolder("root", CONFIG.rootFolderName, "root");
+    const folderQuery = [
+      `name = '${escapeQuery(CONFIG.legacyEstimateFolderName)}'`,
+      `mimeType = '${FOLDER_MIME}'`,
+      `'${escapeQuery(rootId)}' in parents`,
+      "trashed = false"
+    ].join(" and ");
+    const legacyFolder = (await listFiles(folderQuery))[0];
+    if (!legacyFolder) return null;
+    const fileQuery = [
+      `'${escapeQuery(legacyFolder.id)}' in parents`,
+      "trashed = false",
+      "mimeType = 'application/json'",
+      `appProperties has { key='kocon' and value='${escapeQuery(normalized)}' }`,
+      "appProperties has { key='docType' and value='estimate' }"
+    ].join(" and ");
+    return (await listFiles(fileQuery))[0] || null;
+  }
+
   function documentName(kocon, docType) {
-    return `高コン${normalizeKocon(kocon)}_${docType === "estimate" ? "見積書" : "報告書"}.json`;
+    requireDocType(docType);
+    return `高コン${normalizeKocon(kocon)}_${docType === "estimate" ? "見積もり" : "報告書"}.json`;
   }
 
   async function createJsonDocument(kocon, docType, data, folderId) {
@@ -298,7 +350,7 @@
       `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`,
       JSON.stringify(metadata),
       `\r\n--${boundary}\r\nContent-Type: application/json\r\n\r\n`,
-      JSON.stringify(data, null, 2),
+      JSON.stringify(stampDocumentType(data, docType), null, 2),
       `\r\n--${boundary}--`
     ], { type: `multipart/related; boundary=${boundary}` });
     return apiFetch(`${DRIVE_UPLOAD_API}/files?uploadType=multipart&fields=id,name,appProperties`, {
@@ -308,22 +360,35 @@
     });
   }
 
-  async function updateJsonDocument(fileId, data) {
+  async function updateJsonDocument(fileId, kocon, docType, data) {
+    await apiFetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=id,name,appProperties`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json; charset=UTF-8" },
+      body: JSON.stringify({
+        name: documentName(kocon, docType),
+        appProperties: {
+          kocon: normalizeKocon(kocon),
+          docType,
+          schemaVersion: CONFIG.schemaVersion
+        }
+      })
+    });
     return apiFetch(`${DRIVE_UPLOAD_API}/files/${encodeURIComponent(fileId)}?uploadType=media&fields=id,name,appProperties`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json; charset=UTF-8" },
-      body: JSON.stringify(data, null, 2)
+      body: JSON.stringify(stampDocumentType(data, docType), null, 2)
     });
   }
 
   async function saveJson({ kocon, docType, data }) {
+    requireDocType(docType);
     const normalized = normalizeKocon(kocon);
     if (!normalized) throw new DriveError("高コンが空欄のため保存できません。");
     const folderId = await getDocumentFolder(docType);
     const existing = await findDocument(normalized, docType);
     if (existing) {
       try {
-        return await updateJsonDocument(existing.id, data);
+        return await updateJsonDocument(existing.id, normalized, docType, data);
       } catch (error) {
         if (!(error instanceof DriveError) || error.status !== 404) throw error;
       }
@@ -332,20 +397,23 @@
   }
 
   async function loadJson({ kocon, docType }) {
-    const file = await findDocument(kocon, docType);
+    requireDocType(docType);
+    const file = await findDocument(kocon, docType) ||
+      (docType === "estimate" ? await findLegacyEstimateDocument(kocon) : null);
     if (!file) return null;
     const result = await apiFetch(`${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`);
     if (typeof result === "string") {
       try {
-        return JSON.parse(result);
+        return verifyDocumentType(JSON.parse(result), docType);
       } catch (_) {
         throw new DriveError("Drive上のJSONデータを読み取れませんでした。");
       }
     }
-    return result;
+    return verifyDocumentType(result, docType);
   }
 
   function storePending(docType, kocon, data, json) {
+    requireDocType(docType);
     const normalized = normalizeKocon(kocon);
     if (!normalized) return false;
     return writeJsonStorage(pendingKey(docType, normalized), {
@@ -528,11 +596,14 @@
             })) !== false;
           } catch (error) {
             console.error("Kocon confirmation failed", error);
-            setStatus("見積書データの確認に失敗しました。", "error");
+            setStatus(`${label}データの確認に失敗しました。`, "error");
           } finally {
             koconInput.disabled = false;
           }
-          if (confirmed) confirmedKocons.add(next);
+          if (confirmed) {
+            confirmedKocons.add(next);
+            if (isConnected()) await markDirty({ immediate: true });
+          }
         }
 
         return true;
@@ -637,6 +708,11 @@
         const target = event.target;
         if (isKoconTarget(target) || target.type === "file") return;
         if (target.matches("input,select,textarea")) markDirty();
+      });
+      root.addEventListener("input", event => {
+        const target = event.target;
+        if (isKoconTarget(target) || target.type === "file") return;
+        if (target.matches("input,select,textarea,[contenteditable='true']")) markDirty();
       });
       root.addEventListener("focusout", event => {
         const target = event.target;
