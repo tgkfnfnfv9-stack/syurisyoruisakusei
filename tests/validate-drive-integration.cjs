@@ -29,7 +29,7 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
   assert.doesNotMatch(html, /accounts\.google\.com\/gsi\/client/);
-  assert.match(html, /<script src="google-drive\.js\?v=20260730-6"><\/script>/);
+  assert.match(html, /<script src="google-drive\.js\?v=20260730-7"><\/script>/);
 }
 
 new vm.Script(drive, { filename: "google-drive.js" });
@@ -103,8 +103,14 @@ assert.match(estimateApp, /\$\("driveSearchEstimateBtn"\)\.addEventListener\("cl
 assert.match(reportApp, /\$\("driveSearchReportBtn"\)\.addEventListener\("click",searchReportFromDrive\)/);
 assert.match(estimateApp, /loadJson\(\{kocon,docType:"estimate"\}\)/);
 assert.match(reportApp, /loadJson\(\{kocon,docType:"report"\}\)/);
-assert.match(estimate, /<h2>高コン／見積もり番号・Dean共通Drive<\/h2>/);
-assert.match(report, /<h2>高コン／見積もり番号・Dean共通Drive<\/h2>/);
+assert.match(estimate, /<h2>高コン／見積もり番号・共通Drive<\/h2>/);
+assert.match(report, /<h2>高コン／見積もり番号・共通Drive<\/h2>/);
+assert.match(estimateDriveCard[0], /id="driveLoginBtn"[\s\S]*>Googleにログイン<\/a>/);
+assert.match(reportDriveCard[0], /id="driveLoginBtn"[\s\S]*>Googleにログイン<\/a>/);
+assert.match(estimateDriveCard[0], /target="_blank" rel="noopener"/);
+assert.match(reportDriveCard[0], /target="_blank" rel="noopener"/);
+assert.doesNotMatch(estimateDriveCard[0], /Dean/);
+assert.doesNotMatch(reportDriveCard[0], /Dean/);
 assert.doesNotMatch(estimate, /\.drive-card\{\s*border-color:/);
 assert.doesNotMatch(report, /\.drive-card\{\s*border-color:/);
 assert.match(estimateApp, /<div class="k">見積番号<\/div><div class="v" contenteditable>\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
@@ -123,8 +129,8 @@ assert.match(estimateApp, /function autosaveFromEvent\(event\)\{ const id=event&
 assert.match(reportApp, /function autosaveFromEvent\(event\)\{ const id=event&&event\.target&&event\.target\.id; if\(id==="mKocon"\|\|id==="subject"\)return; autosave\(\); \}/);
 assert.match(estimateApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
 assert.match(reportApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
-assert.match(estimate, /google-drive\.js\?v=20260730-6/);
-assert.match(report, /google-drive\.js\?v=20260730-6/);
+assert.match(estimate, /google-drive\.js\?v=20260730-7/);
+assert.match(report, /google-drive\.js\?v=20260730-7/);
 
 const sectionSeven = report.match(/<h2><span class="n">7<\/span>[\s\S]*?<\/section>/);
 assert.ok(sectionSeven, "report section 7 must exist");

@@ -160,7 +160,7 @@ vm.runInNewContext(
   );
   assert.equal(window.google, undefined, "central mode must not require Google OAuth library");
 
-  console.log("Dean central Drive client checks passed.");
+  console.log("Central Drive client checks passed.");
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
