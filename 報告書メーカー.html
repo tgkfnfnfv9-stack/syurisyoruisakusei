@@ -58,8 +58,6 @@ input:focus,select:focus{ outline:2px solid var(--navy2); border-color:var(--nav
 .foot{ font-size:10.5px; color:#8a96a4; margin-top:8px; line-height:1.45; }
 .notice{ margin-top:10px; padding:7px 9px; font-size:11.5px; border-radius:6px; background:#fff5e6; border:1px solid #f0c987; color:#8a5a00; }
 .status{ font-size:11px; margin-top:6px; min-height:14px; line-height:1.4; } .status.ok{ color:var(--ok); } .status.err{ color:var(--accent); }
-.drive-card{ border-color:#b9d1f4; background:#f8fbff; }
-.drive-card h2{ color:#174ea6; }
 .drive-status{ font-size:11px; margin-top:8px; min-height:16px; line-height:1.45; color:#5f6b7a; }
 .drive-status.ok{ color:var(--ok); } .drive-status.err{ color:var(--accent); }
 .drive-card button:disabled{ opacity:.55; cursor:wait; }
@@ -167,7 +165,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <div class="io"><button id="saveBtn">💾 PCに保存</button><button id="loadBtn">📂 読み込み</button><button id="estBtn">📥 見積取込</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"><input id="estFile" type="file" accept="application/json,.json" class="hidden"></div>
 
     <section class="card drive-card">
-      <h2>高コン・Google Drive</h2>
+      <h2>高コン／見積もり番号・Google Drive</h2>
       <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
       <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>Google Driveに接続</button>
       <p class="drive-status" id="driveStatus" role="status" aria-live="polite">Google認証を準備中…</p>
@@ -965,7 +963,7 @@ function renderSheet(){ const items=computeItems(); let rows="";
         <div class="k">作業場所</div><div class="v" contenteditable>${esc($("address").value.trim())}</div>
         <div class="k">支払条件</div><div class="v" contenteditable>請求書届き次第</div>
         <div class="k">有効期限</div><div class="v" contenteditable>3ヶ月</div>
-        <div class="k">高コン</div><div class="v" contenteditable>${esc($("mKocon").value.trim())}</div></div>
+        <div class="k">見積番号</div><div class="v" contenteditable>${esc($("mKocon").value.trim())}</div></div>
       <div class="total-box"><span class="lbl">合計金額(消費税等込)</span><span class="amt" id="topTotal">¥0</span></div></div>
       <div class="head-right"><div class="stamp"><div class="c"></div><div class="c"></div><div class="c"></div></div>
         <div class="brand">EAST&nbsp;JAPAN&nbsp;MACHINE<br>PLAZA</div><div class="co">株式会社 小林機械</div>
