@@ -15,8 +15,10 @@
   const FOLDER_MIME = "application/vnd.google-apps.folder";
   const FOLDER_CACHE_KEY = "kkmt_drive_folder_ids_v1";
   const PENDING_PREFIX = "kkmt_drive_pending_";
+  const SESSION_TOKEN_KEY = "kkmt_drive_session_token_v1";
 
   let accessToken = "";
+  let accessTokenExpiresAt = 0;
   let tokenClient = null;
   let preparePromise = null;
   let connectPromise = null;
@@ -55,6 +57,44 @@
     }
   }
 
+  function clearSessionToken() {
+    accessToken = "";
+    accessTokenExpiresAt = 0;
+    try {
+      if (global.sessionStorage) global.sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    } catch (_) {}
+  }
+
+  function restoreSessionToken() {
+    if (accessToken) return;
+    try {
+      if (!global.sessionStorage) return;
+      const saved = JSON.parse(global.sessionStorage.getItem(SESSION_TOKEN_KEY) || "null");
+      if (!saved || !saved.accessToken || Number(saved.expiresAt) <= Date.now() + 5000) {
+        global.sessionStorage.removeItem(SESSION_TOKEN_KEY);
+        return;
+      }
+      accessToken = saved.accessToken;
+      accessTokenExpiresAt = Number(saved.expiresAt);
+    } catch (_) {
+      clearSessionToken();
+    }
+  }
+
+  function rememberSessionToken(response) {
+    accessToken = response.access_token;
+    const expiresIn = Math.max(60, Number(response.expires_in) || 3600);
+    accessTokenExpiresAt = Date.now() + expiresIn * 1000;
+    try {
+      if (global.sessionStorage) {
+        global.sessionStorage.setItem(SESSION_TOKEN_KEY, JSON.stringify({
+          accessToken,
+          expiresAt: accessTokenExpiresAt
+        }));
+      }
+    } catch (_) {}
+  }
+
   function readFolderCache() {
     const cache = readJsonStorage(FOLDER_CACHE_KEY, {});
     return cache && typeof cache === "object" ? cache : {};
@@ -65,6 +105,7 @@
   }
 
   async function prepare() {
+    restoreSessionToken();
     if (tokenClient) return;
     if (preparePromise) return preparePromise;
     preparePromise = (async () => {
@@ -81,7 +122,7 @@
         callback: response => {
           if (!connectPromise) return;
           if (response && response.access_token) {
-            accessToken = response.access_token;
+            rememberSessionToken(response);
             connectResolve(response);
           } else {
             connectReject(new DriveError((response && response.error_description) || "Google Driveの認証に失敗しました。"));
@@ -106,6 +147,7 @@
   }
 
   function connect() {
+    if (isConnected()) return Promise.resolve({ access_token: accessToken });
     if (!tokenClient) {
       return Promise.reject(new DriveError("Google認証の準備中です。少し待ってからもう一度押してください。"));
     }
@@ -126,11 +168,16 @@
   }
 
   function isConnected() {
-    return Boolean(accessToken);
+    if (!accessToken) return false;
+    if (accessTokenExpiresAt && accessTokenExpiresAt <= Date.now() + 5000) {
+      clearSessionToken();
+      return false;
+    }
+    return true;
   }
 
   async function apiFetch(url, options) {
-    if (!accessToken) throw new DriveError("Google Driveへ接続してください。", 401);
+    if (!isConnected()) throw new DriveError("Google Driveへ接続してください。", 401);
     const request = Object.assign({}, options || {});
     request.headers = new Headers(request.headers || {});
     request.headers.set("Authorization", `Bearer ${accessToken}`);
@@ -145,7 +192,7 @@
           detail = (await response.text()).slice(0, 180);
         } catch (_) {}
       }
-      if (response.status === 401) accessToken = "";
+      if (response.status === 401) clearSessionToken();
       throw new DriveError(detail || `Google Drive APIエラー（${response.status}）`, response.status);
     }
     if (response.status === 204) return null;
@@ -315,14 +362,15 @@
     } catch (_) {}
   }
 
-  function getPendingItems() {
+  function getPendingItems(docTypeFilter) {
     const items = [];
     try {
       for (let i = 0; i < localStorage.length; i += 1) {
         const key = localStorage.key(i);
         if (!key || !key.startsWith(PENDING_PREFIX)) continue;
         const item = readJsonStorage(key, null);
-        if (item && item.kocon && ["estimate", "report"].includes(item.docType)) {
+        if (item && item.kocon && ["estimate", "report"].includes(item.docType) &&
+            (!docTypeFilter || item.docType === docTypeFilter)) {
           items.push({ key, item });
         }
       }
@@ -330,9 +378,9 @@
     return items.sort((a, b) => String(a.item.updatedAt || "").localeCompare(String(b.item.updatedAt || "")));
   }
 
-  async function flushPending() {
+  async function flushPending(docTypeFilter) {
     const results = [];
-    for (const entry of getPendingItems()) {
+    for (const entry of getPendingItems(docTypeFilter)) {
       try {
         const data = entry.item.data || JSON.parse(entry.item.json);
         await saveJson({
@@ -392,7 +440,12 @@
           saveRequested = false;
           const current = snapshot();
           if (!current.kocon) {
-            setStatus("高コンを入力するとGoogle Driveへ自動保存できます。");
+            setStatus(
+              isConnected()
+                ? "Google Drive接続済み（高コンを入力すると自動保存）"
+                : "高コンを入力するとGoogle Driveへ自動保存できます。",
+              isConnected() ? "ok" : ""
+            );
             continue;
           }
           if (!isConnected()) {
@@ -418,6 +471,7 @@
           } catch (error) {
             if (!skipPagehideSave) storePending(docType, current.kocon, current.data, current.json);
             if (error instanceof DriveError && error.status === 401) {
+              connectButton.textContent = "Google Driveに接続";
               setStatus("接続期限が切れました。再接続してください（端末内へ一時保存済み）", "error");
             } else {
               setStatus("保存に失敗しました。端末内へ一時保存しました", "error");
@@ -510,8 +564,9 @@
       connectButton.disabled = true;
       try {
         await connect();
+        connectButton.textContent = "Google Drive接続済み";
         setStatus("Google Driveへ接続しました。未同期データを確認中…", "ok");
-        const results = await flushPending();
+        const results = await flushPending(docType);
         const failures = results.filter(result => !result.ok);
         if (failures.length) {
           setStatus("一部の未同期データを保存できませんでした。", "error");
@@ -542,7 +597,29 @@
       connectButton.disabled = true;
       prepare().then(() => {
         connectButton.disabled = false;
-        setStatus("Google Drive未接続");
+        if (!isConnected()) {
+          connectButton.textContent = "Google Driveに接続";
+          setStatus("Google Drive未接続");
+          return;
+        }
+        connectButton.textContent = "Google Drive接続済み";
+        setStatus("Google Drive接続済み。未同期データを確認中…", "ok");
+        flushPending(docType).then(async results => {
+          const failures = results.filter(result => !result.ok);
+          if (failures.length) {
+            setStatus("一部の未同期データを保存できませんでした。", "error");
+          } else if (results.length) {
+            setStatus(`${results.length}件の未同期${label}データを保存しました。`, "ok");
+          } else {
+            setStatus("Google Drive接続済み", "ok");
+          }
+          await confirmCurrentKocon();
+          await markDirty({ immediate: true });
+        }).catch(error => {
+          console.error("Google Drive session resume failed", error);
+          setStatus("接続の再開に失敗しました。接続ボタンを押してください。", "error");
+          connectButton.textContent = "Google Driveに接続";
+        });
       }).catch(error => {
         console.error("Google Identity Services failed to load", error);
         setStatus("Google認証を準備できませんでした。ページを再読み込みしてください。", "error");
