@@ -657,7 +657,7 @@
       return null;
     }
 
-    async function confirmCurrentKocon() {
+    async function confirmCurrentKocon({ save = true } = {}) {
       if (commitPromise) return commitPromise;
       commitPromise = (async () => {
         const next = normalizeKocon(koconInput.value);
@@ -679,7 +679,7 @@
           setStatus(docType === "estimate"
             ? "高コンがなくても、件名でGoogle Driveへ自動保存できます。"
             : "高コンを入力するとGoogle Driveへ自動保存できます。");
-          if (docType === "estimate" && normalizeSubject(fallbackInput && fallbackInput.value)) {
+          if (save && docType === "estimate" && normalizeSubject(fallbackInput && fallbackInput.value)) {
             await markDirty({ immediate: true });
           }
           return true;
@@ -702,7 +702,7 @@
           }
           if (confirmed) {
             confirmedKocons.add(next);
-            if (isConnected()) await markDirty({ immediate: true });
+            if (save && isConnected()) await markDirty({ immediate: true });
           }
         }
 
@@ -804,18 +804,18 @@
       connectButton.addEventListener("click", handleConnect);
 
       ["change", "focusout"].forEach(eventName => {
-        koconInput.addEventListener(eventName, confirmCurrentKocon);
+        koconInput.addEventListener(eventName, () => confirmCurrentKocon({ save: false }));
       });
       koconInput.addEventListener("keydown", event => {
         if (event.key !== "Enter") return;
         event.preventDefault();
         koconInput.blur();
-        confirmCurrentKocon();
+        confirmCurrentKocon({ save: false });
       });
 
       root.addEventListener("change", event => {
         const target = event.target;
-        if (isKoconTarget(target) || isSearchTarget(target) || target.type === "file") return;
+        if (isKoconTarget(target) || isFallbackTarget(target) || isSearchTarget(target) || target.type === "file") return;
         if (target.matches("input,select,textarea")) markDirty();
       });
       root.addEventListener("input", event => {
@@ -825,14 +825,14 @@
       });
       root.addEventListener("focusout", event => {
         const target = event.target;
-        if (isKoconTarget(target) || isSearchTarget(target)) return;
+        if (isKoconTarget(target) || isFallbackTarget(target) || isSearchTarget(target)) return;
         if (target.matches("input[type='text'],input[type='number'],input[type='date'],input[type='time'],textarea,[contenteditable='true']")) {
           markDirty();
         }
       });
       root.addEventListener("keydown", event => {
         const target = event.target;
-        if (event.key === "Enter" && !isKoconTarget(target) && !isSearchTarget(target) && target.matches("input[type='text'],input[type='number']")) {
+        if (event.key === "Enter" && !isKoconTarget(target) && !isFallbackTarget(target) && !isSearchTarget(target) && target.matches("input[type='text'],input[type='number']")) {
           markDirty();
         }
       });

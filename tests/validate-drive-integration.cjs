@@ -29,7 +29,7 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
   assert.match(html, /accounts\.google\.com\/gsi\/client/);
-  assert.match(html, /<script src="google-drive\.js\?v=20260730-4"><\/script>/);
+  assert.match(html, /<script src="google-drive\.js\?v=20260730-5"><\/script>/);
 }
 
 new vm.Script(drive, { filename: "google-drive.js" });
@@ -102,8 +102,17 @@ assert.match(reportApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fiel
 assert.match(estimateApp, /const kocon=\(\$\("mKocon"\)\.value\|\|""\)\.trim\(\)/);
 assert.match(reportApp, /loadJson\(\{kocon,docType:"estimate"\}\)/);
 assert.match(drive, /adoptCurrentKocon\(\{ confirmed = false, save = true \} = \{\}\)/);
+assert.match(drive, /confirmCurrentKocon\(\{ save = true \} = \{\}\)/);
+assert.match(drive, /confirmCurrentKocon\(\{ save: false \}\)/);
+assert.match(drive, /if \(save && isConnected\(\)\) await markDirty\(\{ immediate: true \}\)/);
+assert.match(drive, /isKoconTarget\(target\) \|\| isFallbackTarget\(target\) \|\| isSearchTarget\(target\)/);
 assert.match(drive, /root\.addEventListener\("input"/);
-assert.match(drive, /if \(isConnected\(\)\) await markDirty\(\{ immediate: true \}\)/);
+assert.match(estimateApp, /function autosaveFromEvent\(event\)\{ const id=event&&event\.target&&event\.target\.id; if\(id==="mKocon"\|\|id==="subject"\)return; autosave\(\); \}/);
+assert.match(reportApp, /function autosaveFromEvent\(event\)\{ const id=event&&event\.target&&event\.target\.id; if\(id==="mKocon"\|\|id==="subject"\)return; autosave\(\); \}/);
+assert.match(estimateApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
+assert.match(reportApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
+assert.match(estimate, /google-drive\.js\?v=20260730-5/);
+assert.match(report, /google-drive\.js\?v=20260730-5/);
 
 const sectionSeven = report.match(/<h2><span class="n">7<\/span>[\s\S]*?<\/section>/);
 assert.ok(sectionSeven, "report section 7 must exist");
