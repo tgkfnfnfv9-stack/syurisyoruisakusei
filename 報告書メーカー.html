@@ -61,7 +61,6 @@ input:focus,select:focus{ outline:2px solid var(--navy2); border-color:var(--nav
 .drive-status{ font-size:11px; margin-top:8px; min-height:16px; line-height:1.45; color:#5f6b7a; }
 .drive-status.ok{ color:var(--ok); } .drive-status.err{ color:var(--accent); }
 .drive-card button:disabled{ opacity:.55; cursor:wait; }
-.drive-login{ display:block; box-sizing:border-box; text-align:center; text-decoration:none; margin-top:10px; background:#fff; color:var(--google); border:1.5px solid var(--google); }
 .drive-search{ margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
 .drive-search-modes{ display:flex; gap:16px; flex-wrap:wrap; margin:8px 0; }
 .drive-search-modes label{ display:flex; align-items:center; gap:6px; margin:0; font-weight:700; }
@@ -173,8 +172,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
       <h2>高コン／見積もり番号・共通Drive</h2>
       <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
       <label>件名<input id="subject" type="text" placeholder="例）研磨機 クラッチ取り外し"></label>
-      <a class="btn btn-google drive-login" id="driveLoginBtn" href="https://script.google.com/macros/s/AKfycbwv8C_-IKb3eoQARwYuumCohba_z5Lyq4t3aKZvYPTbbtMTz3VvEhOuhnFaY-j1SODa/exec" target="_blank" rel="noopener">Googleにログイン</a>
-      <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:8px;" disabled>共通Driveに接続</button>
+      <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>共通Driveに接続</button>
       <div class="drive-search">
         <p class="foot" style="margin-top:0;"><b>検索方法</b></p>
         <div class="drive-search-modes">
@@ -185,7 +183,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <p class="foot">高コン番号・件名は上の入力欄を使用します。</p>
       </div>
       <button type="button" class="btn btn-google" id="driveImportEstimateBtn" style="margin-top:8px;">Driveから見積書を取り込む</button>
-      <p class="drive-status" id="driveStatus" role="status" aria-live="polite">最初に「Googleにログイン」を押してください。</p>
+      <p class="drive-status" id="driveStatus" role="status" aria-live="polite">共通Driveへ接続中…</p>
     </section>
 
     <section class="card">
@@ -841,7 +839,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260730-7"></script>
+<script src="google-drive.js?v=20260730-8"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
