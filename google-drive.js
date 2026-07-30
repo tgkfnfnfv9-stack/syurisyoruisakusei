@@ -37,6 +37,8 @@
 
   const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
   const normalizeKocon = value => String(value == null ? "" : value).trim();
+  const normalizeSubject = value => String(value == null ? "" : value).trim();
+  const safeFileSegment = value => normalizeSubject(value).replace(/[\\/:*?"<>|]/g, "_").replace(/\s+/g, " ").slice(0, 100);
   function requireDocType(docType) {
     if (!["estimate", "report"].includes(docType)) throw new DriveError("不明な書類種別です。");
     return docType;
@@ -64,8 +66,12 @@
     return data;
   }
   const escapeQuery = value => String(value).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-  const pendingKey = (docType, kocon) =>
-    `${PENDING_PREFIX}${docType}_${encodeURIComponent(normalizeKocon(kocon))}`;
+  const pendingKey = (docType, kocon, subject) => {
+    const identity = normalizeKocon(kocon)
+      ? `k_${normalizeKocon(kocon)}`
+      : `s_${normalizeSubject(subject)}`;
+    return `${PENDING_PREFIX}${docType}_${encodeURIComponent(identity)}`;
+  };
 
   function readJsonStorage(key, fallback) {
     try {
@@ -307,6 +313,43 @@
     return (await listFiles(query))[0] || null;
   }
 
+  async function findDocumentBySubject(subject, docType) {
+    requireDocType(docType);
+    const normalized = normalizeSubject(subject);
+    if (!normalized) return null;
+    const folderId = await getDocumentFolder(docType);
+    const query = [
+      `'${escapeQuery(folderId)}' in parents`,
+      "trashed = false",
+      "mimeType = 'application/json'",
+      `appProperties has { key='subjectKey' and value='${escapeQuery(normalized)}' }`,
+      `appProperties has { key='docType' and value='${escapeQuery(docType)}' }`
+    ].join(" and ");
+    return (await listFiles(query))[0] || null;
+  }
+
+  async function findDocumentByEmbeddedSubject(subject, docType) {
+    const normalized = normalizeSubject(subject);
+    if (!normalized) return null;
+    const folderId = await getDocumentFolder(docType);
+    const query = [
+      `'${escapeQuery(folderId)}' in parents`,
+      "trashed = false",
+      "mimeType = 'application/json'",
+      `appProperties has { key='docType' and value='${escapeQuery(docType)}' }`
+    ].join(" and ");
+    for (const file of await listFiles(query)) {
+      try {
+        const raw = await apiFetch(`${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`);
+        const data = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (normalizeSubject(data && data.fields && data.fields.subject) === normalized) {
+          return { file, data };
+        }
+      } catch (_) {}
+    }
+    return null;
+  }
+
   async function findLegacyEstimateDocument(kocon) {
     const normalized = normalizeKocon(kocon);
     if (!normalized) return null;
@@ -329,21 +372,38 @@
     return (await listFiles(fileQuery))[0] || null;
   }
 
-  function documentName(kocon, docType) {
+  function documentName(kocon, subject, docType) {
     requireDocType(docType);
-    return `高コン${normalizeKocon(kocon)}_${docType === "estimate" ? "見積もり" : "報告書"}.json`;
+    const normalizedKocon = normalizeKocon(kocon);
+    const normalizedSubject = safeFileSegment(subject);
+    if (docType === "estimate") {
+      return [
+        normalizedKocon ? `高コン${normalizedKocon}` : "",
+        normalizedSubject,
+        "見積もり"
+      ].filter(Boolean).join("_") + ".json";
+    }
+    return `高コン${normalizedKocon}_報告書.json`;
   }
 
-  async function createJsonDocument(kocon, docType, data, folderId) {
+  function documentProperties(kocon, subject, docType) {
+    const properties = {
+      docType,
+      schemaVersion: CONFIG.schemaVersion
+    };
+    const normalizedKocon = normalizeKocon(kocon);
+    const normalizedSubject = normalizeSubject(subject);
+    if (normalizedKocon) properties.kocon = normalizedKocon;
+    if (normalizedSubject) properties.subjectKey = normalizedSubject;
+    return properties;
+  }
+
+  async function createJsonDocument(kocon, subject, docType, data, folderId) {
     const metadata = {
-      name: documentName(kocon, docType),
+      name: documentName(kocon, subject, docType),
       parents: [folderId],
       mimeType: "application/json",
-      appProperties: {
-        kocon: normalizeKocon(kocon),
-        docType,
-        schemaVersion: CONFIG.schemaVersion
-      }
+      appProperties: documentProperties(kocon, subject, docType)
     };
     const boundary = `kkmt_drive_${Date.now()}_${Math.random().toString(16).slice(2)}`;
     const body = new Blob([
@@ -360,17 +420,13 @@
     });
   }
 
-  async function updateJsonDocument(fileId, kocon, docType, data) {
+  async function updateJsonDocument(fileId, kocon, subject, docType, data) {
     await apiFetch(`${DRIVE_API}/files/${encodeURIComponent(fileId)}?fields=id,name,appProperties`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json; charset=UTF-8" },
       body: JSON.stringify({
-        name: documentName(kocon, docType),
-        appProperties: {
-          kocon: normalizeKocon(kocon),
-          docType,
-          schemaVersion: CONFIG.schemaVersion
-        }
+        name: documentName(kocon, subject, docType),
+        appProperties: documentProperties(kocon, subject, docType)
       })
     });
     return apiFetch(`${DRIVE_UPLOAD_API}/files/${encodeURIComponent(fileId)}?uploadType=media&fields=id,name,appProperties`, {
@@ -380,26 +436,40 @@
     });
   }
 
-  async function saveJson({ kocon, docType, data }) {
+  async function saveJson({ kocon, subject, previousSubject, docType, data }) {
     requireDocType(docType);
     const normalized = normalizeKocon(kocon);
-    if (!normalized) throw new DriveError("高コンが空欄のため保存できません。");
+    const normalizedSubject = normalizeSubject(subject);
+    if (!normalized && !(docType === "estimate" && normalizedSubject)) {
+      throw new DriveError(docType === "estimate" ? "高コンまたは件名が空欄のため保存できません。" : "高コンが空欄のため保存できません。");
+    }
     const folderId = await getDocumentFolder(docType);
-    const existing = await findDocument(normalized, docType);
+    let existing = normalized ? await findDocument(normalized, docType) : null;
+    if (!existing && normalizedSubject) existing = await findDocumentBySubject(normalizedSubject, docType);
+    if (!existing && previousSubject && normalizeSubject(previousSubject) !== normalizedSubject) {
+      existing = await findDocumentBySubject(previousSubject, docType);
+    }
     if (existing) {
       try {
-        return await updateJsonDocument(existing.id, normalized, docType, data);
+        return await updateJsonDocument(existing.id, normalized, normalizedSubject, docType, data);
       } catch (error) {
         if (!(error instanceof DriveError) || error.status !== 404) throw error;
       }
     }
-    return createJsonDocument(normalized, docType, data, folderId);
+    return createJsonDocument(normalized, normalizedSubject, docType, data, folderId);
   }
 
-  async function loadJson({ kocon, docType }) {
+  async function loadJson({ kocon, subject, docType }) {
     requireDocType(docType);
-    const file = await findDocument(kocon, docType) ||
-      (docType === "estimate" ? await findLegacyEstimateDocument(kocon) : null);
+    const normalizedKocon = normalizeKocon(kocon);
+    const normalizedSubject = normalizeSubject(subject);
+    const file = (normalizedKocon ? await findDocument(normalizedKocon, docType) : null) ||
+      (normalizedSubject ? await findDocumentBySubject(normalizedSubject, docType) : null) ||
+      (docType === "estimate" && normalizedKocon ? await findLegacyEstimateDocument(normalizedKocon) : null);
+    if (!file && normalizedSubject) {
+      const embedded = await findDocumentByEmbeddedSubject(normalizedSubject, docType);
+      if (embedded) return verifyDocumentType(embedded.data, docType);
+    }
     if (!file) return null;
     const result = await apiFetch(`${DRIVE_API}/files/${encodeURIComponent(file.id)}?alt=media`);
     if (typeof result === "string") {
@@ -412,21 +482,25 @@
     return verifyDocumentType(result, docType);
   }
 
-  function storePending(docType, kocon, data, json) {
+  function storePending(docType, kocon, subject, previousSubject, data, json) {
     requireDocType(docType);
     const normalized = normalizeKocon(kocon);
-    if (!normalized) return false;
-    return writeJsonStorage(pendingKey(docType, normalized), {
+    const normalizedSubject = normalizeSubject(subject);
+    if (!normalized && !(docType === "estimate" && normalizedSubject)) return false;
+    return writeJsonStorage(pendingKey(docType, normalized, normalizedSubject), {
       docType,
       kocon: normalized,
+      subject: normalizedSubject,
+      previousSubject: normalizeSubject(previousSubject),
       json: json || JSON.stringify(data),
       updatedAt: new Date().toISOString()
     });
   }
 
-  function removePending(docType, kocon) {
+  function removePending(docType, kocon, subject) {
     try {
-      localStorage.removeItem(pendingKey(docType, kocon));
+      if (normalizeKocon(kocon)) localStorage.removeItem(pendingKey(docType, kocon, ""));
+      if (normalizeSubject(subject)) localStorage.removeItem(pendingKey(docType, "", subject));
     } catch (_) {}
   }
 
@@ -437,7 +511,7 @@
         const key = localStorage.key(i);
         if (!key || !key.startsWith(PENDING_PREFIX)) continue;
         const item = readJsonStorage(key, null);
-        if (item && item.kocon && ["estimate", "report"].includes(item.docType) &&
+        if (item && (item.kocon || (item.docType === "estimate" && item.subject)) && ["estimate", "report"].includes(item.docType) &&
             (!docTypeFilter || item.docType === docTypeFilter)) {
           items.push({ key, item });
         }
@@ -453,6 +527,8 @@
         const data = entry.item.data || JSON.parse(entry.item.json);
         await saveJson({
           kocon: entry.item.kocon,
+          subject: entry.item.subject,
+          previousSubject: entry.item.previousSubject,
           docType: entry.item.docType,
           data
         });
@@ -473,6 +549,7 @@
     const label = docType === "estimate" ? "見積書" : "報告書";
     const root = options.rootElement || document;
     const koconInput = options.koconInput;
+    const fallbackInput = options.fallbackInput;
     const statusElement = options.statusElement;
     const connectButton = options.connectButton;
     const collectState = options.collectState;
@@ -482,6 +559,7 @@
     const lastSavedJson = new Map();
 
     let activeKocon = normalizeKocon(koconInput && koconInput.value);
+    let activeSubject = normalizeSubject(fallbackInput && fallbackInput.value);
     let timer = null;
     let saveRequested = false;
     let savingPromise = null;
@@ -497,8 +575,13 @@
 
     function snapshot() {
       const kocon = normalizeKocon(koconInput && koconInput.value);
+      const subject = normalizeSubject(fallbackInput && fallbackInput.value);
       const data = collectState();
-      return { kocon, data, json: JSON.stringify(data) };
+      return { kocon, subject, previousSubject: activeSubject, data, json: JSON.stringify(data) };
+    }
+
+    function snapshotKey(current) {
+      return current.kocon ? `k:${current.kocon}` : (current.subject ? `s:${current.subject}` : "");
     }
 
     async function saveLoop() {
@@ -507,29 +590,41 @@
         while (saveRequested) {
           saveRequested = false;
           const current = snapshot();
-          if (!current.kocon) {
+          const currentKey = snapshotKey(current);
+          const canSaveBySubject = docType === "estimate" && current.subject;
+          if (!current.kocon && !canSaveBySubject) {
             setStatus(
               isConnected()
-                ? "Google Drive接続済み（高コンを入力すると自動保存）"
-                : "高コンを入力するとGoogle Driveへ自動保存できます。",
+                ? (docType === "estimate" ? "Google Drive接続済み（高コンまたは件名を入力すると自動保存）" : "Google Drive接続済み（高コンを入力すると自動保存）")
+                : (docType === "estimate" ? "高コンまたは件名を入力するとGoogle Driveへ自動保存できます。" : "高コンを入力するとGoogle Driveへ自動保存できます。"),
               isConnected() ? "ok" : ""
             );
             continue;
           }
           if (!isConnected()) {
-            const stored = storePending(docType, current.kocon, current.data, current.json);
+            const stored = storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json);
             setStatus(stored ? "Google Drive未接続（端末内へ一時保存済み）" : "Google Drive未接続（端末内への保存に失敗）", stored ? "" : "error");
             continue;
           }
-          if (lastSavedJson.get(current.kocon) === current.json) {
-            removePending(docType, current.kocon);
+          if (lastSavedJson.get(currentKey) === current.json) {
+            removePending(docType, current.kocon, current.subject);
             continue;
           }
           setStatus(`${label}をGoogle Driveへ保存中…`);
           try {
-            await saveJson({ kocon: current.kocon, docType, data: current.data });
-            lastSavedJson.set(current.kocon, current.json);
-            removePending(docType, current.kocon);
+            await saveJson({
+              kocon: current.kocon,
+              subject: current.subject,
+              previousSubject: current.previousSubject,
+              docType,
+              data: current.data
+            });
+            lastSavedJson.set(currentKey, current.json);
+            activeSubject = current.subject;
+            removePending(docType, current.kocon, current.subject);
+            if (current.previousSubject && current.previousSubject !== current.subject) {
+              removePending(docType, "", current.previousSubject);
+            }
             const time = new Intl.DateTimeFormat("ja-JP", {
               hour: "2-digit",
               minute: "2-digit",
@@ -537,7 +632,7 @@
             }).format(new Date());
             setStatus(`${label}を自動保存しました ${time}`, "ok");
           } catch (error) {
-            if (!skipPagehideSave) storePending(docType, current.kocon, current.data, current.json);
+            if (!skipPagehideSave) storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json);
             if (error instanceof DriveError && error.status === 401) {
               connectButton.textContent = "Google Driveに接続";
               setStatus("接続期限が切れました。再接続してください（端末内へ一時保存済み）", "error");
@@ -581,7 +676,12 @@
 
         activeKocon = next;
         if (!next) {
-          setStatus("高コンを入力するとGoogle Driveへ自動保存できます。");
+          setStatus(docType === "estimate"
+            ? "高コンがなくても、件名でGoogle Driveへ自動保存できます。"
+            : "高コンを入力するとGoogle Driveへ自動保存できます。");
+          if (docType === "estimate" && normalizeSubject(fallbackInput && fallbackInput.value)) {
+            await markDirty({ immediate: true });
+          }
           return true;
         }
 
@@ -626,7 +726,8 @@
       clearTimeout(timer);
       saveRequested = false;
       const current = normalizeKocon(koconInput.value);
-      if (current) removePending(docType, current);
+      const subject = normalizeSubject(fallbackInput && fallbackInput.value);
+      removePending(docType, current, subject);
     }
 
     async function handleConnect() {
@@ -656,6 +757,14 @@
 
     function isKoconTarget(target) {
       return target === koconInput;
+    }
+
+    function isFallbackTarget(target) {
+      return !!fallbackInput && target === fallbackInput;
+    }
+
+    function isSearchTarget(target) {
+      return !!(target && target.matches && target.matches("[data-drive-search]"));
     }
 
     function init() {
@@ -706,24 +815,24 @@
 
       root.addEventListener("change", event => {
         const target = event.target;
-        if (isKoconTarget(target) || target.type === "file") return;
+        if (isKoconTarget(target) || isSearchTarget(target) || target.type === "file") return;
         if (target.matches("input,select,textarea")) markDirty();
       });
       root.addEventListener("input", event => {
         const target = event.target;
-        if (isKoconTarget(target) || target.type === "file") return;
+        if (isKoconTarget(target) || isFallbackTarget(target) || isSearchTarget(target) || target.type === "file") return;
         if (target.matches("input,select,textarea,[contenteditable='true']")) markDirty();
       });
       root.addEventListener("focusout", event => {
         const target = event.target;
-        if (isKoconTarget(target)) return;
+        if (isKoconTarget(target) || isSearchTarget(target)) return;
         if (target.matches("input[type='text'],input[type='number'],input[type='date'],input[type='time'],textarea,[contenteditable='true']")) {
           markDirty();
         }
       });
       root.addEventListener("keydown", event => {
         const target = event.target;
-        if (event.key === "Enter" && !isKoconTarget(target) && target.matches("input[type='text'],input[type='number']")) {
+        if (event.key === "Enter" && !isKoconTarget(target) && !isSearchTarget(target) && target.matches("input[type='text'],input[type='number']")) {
           markDirty();
         }
       });
@@ -742,8 +851,9 @@
       global.addEventListener("pagehide", () => {
         if (skipPagehideSave) return;
         const current = snapshot();
-        if (current.kocon && lastSavedJson.get(current.kocon) !== current.json) {
-          storePending(docType, current.kocon, current.data, current.json);
+        const currentKey = snapshotKey(current);
+        if (currentKey && lastSavedJson.get(currentKey) !== current.json) {
+          storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json);
         }
       });
       return api;
