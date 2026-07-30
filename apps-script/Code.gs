@@ -14,35 +14,43 @@ const KKMT_CONFIG = Object.freeze({
   schemaVersion: "2"
 });
 
-function doGet() {
-  return jsonResponse_({
-    ok: true,
-    service: "小林機械 書類データ共通バックエンド",
-    message: "アプリから接続してください。"
-  });
+function doGet(event) {
+  const request = event && event.parameter ? event.parameter : {};
+  if (!request.action) {
+    return jsonResponse_({
+      ok: true,
+      service: "小林機械 書類データ共通バックエンド",
+      message: "アプリから接続してください。"
+    });
+  }
+  const response = handleRequest_(request);
+  return request.callback ? jsonpResponse_(request.callback, response) : jsonResponse_(response);
 }
 
 function doPost(event) {
+  return jsonResponse_(handleRequest_(parseRequest_(event)));
+}
+
+function handleRequest_(request) {
   try {
-    const request = parseRequest_(event);
     verifyPin_(request.pin);
     const action = String(request.action || "");
 
     if (action === "ping") {
-      return jsonResponse_({ ok: true, result: { connected: true } });
+      return { ok: true, result: { connected: true } };
     }
     if (action === "save") {
-      return jsonResponse_({ ok: true, result: saveDocument_(request) });
+      return { ok: true, result: saveDocument_(request) };
     }
     if (action === "load") {
-      return jsonResponse_({ ok: true, result: loadDocument_(request) });
+      return { ok: true, result: loadDocument_(request) };
     }
     throw new Error("不明な操作です。");
   } catch (error) {
-    return jsonResponse_({
+    return {
       ok: false,
       error: error && error.message ? error.message : String(error)
-    });
+    };
   }
 }
 
@@ -67,6 +75,16 @@ function jsonResponse_(value) {
   return ContentService
     .createTextOutput(JSON.stringify(value))
     .setMimeType(ContentService.MimeType.JSON);
+}
+
+function jsonpResponse_(callback, value) {
+  const name = String(callback || "");
+  if (!/^[A-Za-z_$][0-9A-Za-z_$]*$/.test(name)) {
+    return jsonResponse_({ ok: false, error: "コールバック名が正しくありません。" });
+  }
+  return ContentService
+    .createTextOutput(name + "(" + JSON.stringify(value) + ");")
+    .setMimeType(ContentService.MimeType.JAVASCRIPT);
 }
 
 function normalize_(value) {

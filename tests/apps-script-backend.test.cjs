@@ -42,7 +42,7 @@ const context = {
     getScriptLock: () => ({ waitLock() {}, releaseLock() {} })
   },
   ContentService: {
-    MimeType: { JSON: "application/json" },
+    MimeType: { JSON: "application/json", JAVASCRIPT: "application/javascript" },
     createTextOutput: output
   },
   MimeType: { PLAIN_TEXT: "text/plain" },
@@ -66,6 +66,8 @@ function request(body) {
 const pin = "ad5d1bc7";
 assert.deepEqual(request({ action: "ping", pin }), { ok: true, result: { connected: true } });
 assert.equal(request({ action: "ping", pin: "wrong" }).ok, false);
+const jsonp = context.doGet({ parameter: { action: "ping", pin, callback: "kkmtCallback" } });
+assert.equal(jsonp.getContent(), 'kkmtCallback({"ok":true,"result":{"connected":true}});');
 
 let result = request({
   action: "save",
