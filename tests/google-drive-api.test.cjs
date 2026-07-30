@@ -105,6 +105,7 @@ async function driveFetch(url, options = {}) {
 
 const window = { addEventListener() {}, confirm: () => true };
 window.window = window;
+window.KKMT_CENTRAL_DRIVE_CONFIG = { url: "" };
 window.google = {
   accounts: {
     oauth2: {
@@ -221,6 +222,7 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js")
 
   const restoredWindow = { addEventListener() {}, confirm: () => true, sessionStorage };
   restoredWindow.window = restoredWindow;
+  restoredWindow.KKMT_CENTRAL_DRIVE_CONFIG = { url: "" };
   restoredWindow.google = window.google;
   const restoredContext = {
     ...context,

@@ -169,10 +169,10 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <div class="io"><button id="saveBtn">💾 PCに保存</button><button id="loadBtn">📂 読み込み</button><button id="estBtn">📥 見積取込</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"><input id="estFile" type="file" accept="application/json,.json" class="hidden"></div>
 
     <section class="card drive-card">
-      <h2>高コン／見積もり番号・Google Drive</h2>
+      <h2>高コン／見積もり番号・Dean共通Drive</h2>
       <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
       <label>件名<input id="subject" type="text" placeholder="例）研磨機 クラッチ取り外し"></label>
-      <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>Google Driveに接続</button>
+      <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>Dean共通Driveに接続</button>
       <div class="drive-search">
         <p class="foot" style="margin-top:0;"><b>検索方法</b></p>
         <div class="drive-search-modes">
@@ -183,7 +183,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <p class="foot">高コン番号・件名は上の入力欄を使用します。</p>
       </div>
       <button type="button" class="btn btn-google" id="driveImportEstimateBtn" style="margin-top:8px;">Driveから見積書を取り込む</button>
-      <p class="drive-status" id="driveStatus" role="status" aria-live="polite">Google認証を準備中…</p>
+      <p class="drive-status" id="driveStatus" role="status" aria-live="polite">Dean共通Driveへ接続中…</p>
     </section>
 
     <section class="card">
@@ -839,8 +839,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="google-drive.js?v=20260730-5"></script>
+<script src="google-drive.js?v=20260730-6"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1028,10 +1027,10 @@ async function searchReportFromDrive(){
   const input=$(byKocon?"mKocon":"subject");
   const term=(input.value||"").trim();
   if(!term){ alert(byKocon?"検索する高コン番号を入力してください。":"検索する件名を入力してください。"); return; }
-  if(!KKMTDrive.isConnected()){ driveAutosaveController.setStatus("先にGoogle Driveへ接続してください。","error"); return; }
+  if(!KKMTDrive.isConnected()){ driveAutosaveController.setStatus("先にDean共通Driveへ接続してください。","error"); return; }
   const label=byKocon?`高コン「${term}」`:`件名「${term}」`;
   if(!confirm(`${label}の保存済み報告書を取得し、現在の入力内容を置き換えますか？`))return;
-  driveAutosaveController.setStatus("報告書をGoogle Driveから検索中…");
+  driveAutosaveController.setStatus("報告書をDean共通Driveから検索中…");
   try{
     const report=await KKMTDrive.loadJson(byKocon?{kocon:term,docType:"report"}:{subject:term,docType:"report"});
     if(!report){ driveAutosaveController.setStatus(`${label}の報告書が見つかりません。`,"error"); return; }
@@ -1060,9 +1059,9 @@ async function autoLoadReportFromDrive({kocon,isConnected,setStatus}){
 async function importEstimateFromDrive(){
   const kocon=($("mKocon").value||"").trim();
   if(!kocon){ alert("先に高コン／見積もり番号を入力してください。"); return; }
-  if(!KKMTDrive.isConnected()){ driveAutosaveController.setStatus("先にGoogle Driveへ接続してください。","error"); return; }
+  if(!KKMTDrive.isConnected()){ driveAutosaveController.setStatus("先にDean共通Driveへ接続してください。","error"); return; }
   if(!confirm(`高コン「${kocon}」の見積書を取り込み、現在の報告書入力を置き換えますか？`))return;
-  driveAutosaveController.setStatus("見積書をGoogle Driveから取得中…");
+  driveAutosaveController.setStatus("見積書をDean共通Driveから取得中…");
   try{
     const estimate=await KKMTDrive.loadJson({kocon,docType:"estimate"});
     if(!estimate){ driveAutosaveController.setStatus(`高コン「${kocon}」の見積書が見つかりません。`,"error"); return; }
