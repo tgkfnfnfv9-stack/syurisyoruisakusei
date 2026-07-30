@@ -114,6 +114,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <section class="card drive-card">
       <h2>高コン／見積もり番号・Google Drive</h2>
       <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
+      <label>件名<input id="subject" type="text" placeholder="例）研磨機 クラッチ取り外し"></label>
       <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>Google Driveに接続</button>
       <div class="drive-search">
         <p class="foot" style="margin-top:0;"><b>検索方法</b></p>
@@ -122,7 +123,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
           <label><input type="radio" name="estimateDriveSearchMode" id="driveSearchModeSubject" value="subject">件名</label>
         </div>
         <button type="button" class="btn btn-google" id="driveSearchEstimateBtn">見積もりを検索</button>
-        <p class="foot">高コン番号は上の入力欄、件名は基本情報の件名欄を使用します。</p>
+        <p class="foot">高コン番号・件名は上の入力欄を使用します。</p>
       </div>
       <p class="drive-status" id="driveStatus" role="status" aria-live="polite">Google認証を準備中…</p>
     </section>
@@ -130,7 +131,6 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <section class="card">
       <h2><span class="n">1</span>基本情報</h2>
       <label>相手の会社名 <span class="hint">（御中の前）</span><input id="client" type="text" placeholder="例）岡機械刃物研磨"></label>
-      <label>件名<input id="subject" type="text" placeholder="例）研磨機 クラッチ取り外し"></label>
       <label>作業日にち <span class="hint">日にちが未定なら下の種別を「打ち合わせ」に</span><input id="workDate" type="date"></label>
       <label>種別（作業日／打ち合わせ）<select id="dateType"><option value="work">作業日</option><option value="meeting">打ち合わせ</option></select></label>
       <label>作業場所（住所）<span class="hint">距離・高速代の自動取得に使用</span><input id="address" type="text" placeholder="例）東京都江東区石島12-3"></label>
