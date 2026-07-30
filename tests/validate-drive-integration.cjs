@@ -49,6 +49,11 @@ assert.doesNotMatch(estimateApp, /setInterval\s*\(/);
 assert.doesNotMatch(reportApp, /setInterval\s*\(/);
 assert.match(estimateApp, /docType:"estimate"/);
 assert.match(reportApp, /docType:"report"/);
+assert.match(estimate, /id="driveLoadEstimateBtn"/);
+assert.match(report, /id="driveLoadReportBtn"/);
+assert.match(report, /id="driveImportEstimateBtn"/);
+assert.match(estimateApp, /loadJson\(\{kocon,docType:"estimate"\}\)/);
+assert.match(reportApp, /loadJson\(\{kocon,docType:"report"\}\)/);
 assert.match(estimate, /<h2>高コン／見積もり番号・Google Drive<\/h2>/);
 assert.match(report, /<h2>高コン／見積もり番号・Google Drive<\/h2>/);
 assert.doesNotMatch(estimate, /\.drive-card\{\s*border-color:/);
@@ -59,7 +64,8 @@ assert.match(estimateApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fi
 assert.match(reportApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fields\.estNo/);
 assert.match(estimateApp, /const kocon=\(\$\("mKocon"\)\.value\|\|""\)\.trim\(\)/);
 assert.match(reportApp, /loadJson\(\{kocon,docType:"estimate"\}\)/);
-assert.doesNotMatch(reportApp, /loadJson\(\{kocon,docType:"report"\}\)/);
+assert.doesNotMatch(reportApp, /onKoconConfirmed\s*:/);
+assert.match(drive, /adoptCurrentKocon\(\{ confirmed = false, save = true \} = \{\}\)/);
 
 const sectionSeven = report.match(/<h2><span class="n">7<\/span>[\s\S]*?<\/section>/);
 assert.ok(sectionSeven, "report section 7 must exist");

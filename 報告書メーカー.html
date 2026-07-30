@@ -168,6 +168,8 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
       <h2>高コン／見積もり番号・Google Drive</h2>
       <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
       <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>Google Driveに接続</button>
+      <button type="button" class="btn btn-google" id="driveLoadReportBtn" style="margin-top:8px;">Driveから報告書を取得</button>
+      <button type="button" class="btn btn-google" id="driveImportEstimateBtn" style="margin-top:8px;">Driveから見積書を取り込む</button>
       <p class="drive-status" id="driveStatus" role="status" aria-live="polite">Google認証を準備中…</p>
     </section>
 
@@ -1009,6 +1011,44 @@ function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ 
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
 function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
+async function loadReportFromDrive(){
+  const kocon=($("mKocon").value||"").trim();
+  if(!kocon){ alert("先に高コン／見積もり番号を入力してください。"); return; }
+  if(!KKMTDrive.isConnected()){ driveAutosaveController.setStatus("先にGoogle Driveへ接続してください。","error"); return; }
+  if(!confirm(`高コン「${kocon}」の保存済み報告書を取得し、現在の入力内容を置き換えますか？`))return;
+  driveAutosaveController.setStatus("報告書をGoogle Driveから取得中…");
+  try{
+    const report=await KKMTDrive.loadJson({kocon,docType:"report"});
+    if(!report){ driveAutosaveController.setStatus(`高コン「${kocon}」の報告書が見つかりません。`,"error"); return; }
+    applyState(report);
+    $("mKocon").value=kocon;
+    await driveAutosaveController.adoptCurrentKocon({confirmed:true,save:false});
+    driveAutosaveController.setStatus("報告書を取得しました。","ok");
+  }catch(error){
+    console.error("Report load failed",error);
+    driveAutosaveController.setStatus("報告書を取得できませんでした。","error");
+  }
+}
+
+async function importEstimateFromDrive(){
+  const kocon=($("mKocon").value||"").trim();
+  if(!kocon){ alert("先に高コン／見積もり番号を入力してください。"); return; }
+  if(!KKMTDrive.isConnected()){ driveAutosaveController.setStatus("先にGoogle Driveへ接続してください。","error"); return; }
+  if(!confirm(`高コン「${kocon}」の見積書を取り込み、現在の報告書入力を置き換えますか？`))return;
+  driveAutosaveController.setStatus("見積書をGoogle Driveから取得中…");
+  try{
+    const estimate=await KKMTDrive.loadJson({kocon,docType:"estimate"});
+    if(!estimate){ driveAutosaveController.setStatus(`高コン「${kocon}」の見積書が見つかりません。`,"error"); return; }
+    if(!importEstimate(estimate,true)){ driveAutosaveController.setStatus("見積書を取り込めませんでした。","error"); return; }
+    $("mKocon").value=kocon;
+    await driveAutosaveController.adoptCurrentKocon({confirmed:true});
+    driveAutosaveController.setStatus("見積書を報告書へ取り込みました。§8の作業者を確認してください。","ok");
+  }catch(error){
+    console.error("Estimate import failed",error);
+    driveAutosaveController.setStatus("見積書を取得できませんでした。","error");
+  }
+}
+
 /* 見積データ（御見積書メーカーのJSON）を取り込む。§1/2/4/5/6はそのまま、§3の作業内容→§8の作業行に変換 */
 function importEstimate(s,silent){ if(!s||!s.fields){if(!silent)alert("見積データ（.json）ではないようです。");return false;}
   const f=s.fields; const work=[];
@@ -1367,32 +1407,11 @@ document.addEventListener("DOMContentLoaded",()=>{
     koconInput:$("mKocon"),
     statusElement:$("driveStatus"),
     connectButton:$("driveConnectBtn"),
-    collectState,
-    onKoconConfirmed:async({kocon,isConnected,setStatus})=>{
-      if(!isConnected){
-        setStatus("Drive接続後に、この高コンの見積書データを確認します。");
-        return false;
-      }
-      if(!confirm(`高コン「${kocon}」の見積書データを読み込みますか？`)){
-        setStatus("見積書を読み込まず、現在の内容を報告書として保存します。");
-        return true;
-      }
-      setStatus("見積書データをGoogle Driveから読み込み中…");
-      const estimate=await KKMTDrive.loadJson({kocon,docType:"estimate"});
-      if(!estimate){
-        setStatus(`高コン「${kocon}」の見積書データが見つかりません。`,"error");
-        return true;
-      }
-      if(!importEstimate(estimate,true)){
-        setStatus("Drive上の見積書データを取り込めませんでした。","error");
-        return false;
-      }
-      $("mKocon").value=kocon;
-      setStatus("見積書データを読み込みました。§8の作業者を確認してください。","ok");
-      return true;
-    }
+    collectState
   });
   driveAutosaveController.init();
+  $("driveLoadReportBtn").addEventListener("click",loadReportFromDrive);
+  $("driveImportEstimateBtn").addEventListener("click",importEstimateFromDrive);
   const _app=document.querySelector(".app");
   _app.addEventListener("input",autosave); _app.addEventListener("change",autosave);
   $("resetAllBtn").addEventListener("click",resetAll);
