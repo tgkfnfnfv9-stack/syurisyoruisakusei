@@ -38,6 +38,10 @@ assert.match(drive, /appProperties/);
 assert.match(drive, /schemaVersion/);
 assert.doesNotMatch(drive, /client[_A-Z-]?secret/i);
 assert.doesNotMatch(drive, /localStorage\.(?:setItem|getItem)\([^\n]*(?:access[_A-Z-]?token|client[_A-Z-]?secret)/i);
+assert.match(drive, /SESSION_TOKEN_KEY/);
+assert.match(drive, /global\.sessionStorage/);
+assert.match(drive, /flushPending\(docType\)/);
+assert.doesNotMatch(drive, /const results = await flushPending\(\)/);
 
 const estimateApp = inlineScripts(estimate).at(-1);
 const reportApp = inlineScripts(report).at(-1);
