@@ -12,7 +12,9 @@ function findRecord(docType, kocon, subject) {
   const normalizedSubject = normalize(subject);
   const sameType = records.filter(record => record.docType === docType);
   if (normalizedKocon) return sameType.find(record => record.kocon === normalizedKocon) || null;
-  return (normalizedSubject && sameType.find(record => record.subject === normalizedSubject)) || null;
+  if (!normalizedSubject) return null;
+  const matches = sameType.filter(record => record.subject === normalizedSubject);
+  return matches.find(record => !record.kocon) || matches[0] || null;
 }
 
 const window = {
@@ -73,14 +75,19 @@ async function centralFetch(url, options = {}) {
 
   const kocon = normalize(request.kocon);
   const subject = normalize(request.subject);
-  let existing = kocon ? findRecord(request.docType, kocon, "") : findRecord(request.docType, "", subject);
+  let existing = kocon ? findRecord(request.docType, kocon, "") : null;
   if (!existing && subject) {
     const bySubject = findRecord(request.docType, "", subject);
-    if (!kocon || (bySubject && !bySubject.kocon)) existing = bySubject;
+    if (bySubject && !bySubject.kocon) existing = bySubject;
   }
   if (!existing && request.previousSubject) {
     const byPreviousSubject = findRecord(request.docType, "", request.previousSubject);
-    if (!kocon || (byPreviousSubject && !byPreviousSubject.kocon)) existing = byPreviousSubject;
+    if (byPreviousSubject && !byPreviousSubject.kocon) existing = byPreviousSubject;
+  }
+  const existingRevision = Number(existing && existing.data && existing.data._kkmtRevision) || 0;
+  const expectedRevision = request.expectedRevision == null ? existingRevision : request.expectedRevision;
+  if ((existing && expectedRevision !== existingRevision) || (!existing && expectedRevision !== 0)) {
+    return { type: "opaque" };
   }
   if (!existing) {
     existing = { docType: request.docType, kocon, subject, data: null };
@@ -88,7 +95,11 @@ async function centralFetch(url, options = {}) {
   }
   existing.kocon = kocon;
   existing.subject = subject;
-  existing.data = Object.assign(clone(request.data), { _kkmtDocumentType: request.docType });
+  existing.data = Object.assign(clone(request.data), {
+    _kkmtDocumentType: request.docType,
+    _kkmtRevision: existingRevision + 1,
+    _kkmtUpdatedAt: new Date().toISOString()
+  });
   return { type: "opaque" };
 }
 
@@ -123,6 +134,14 @@ vm.runInNewContext(
 
 (async () => {
   const drive = window.KKMTDrive;
+  const loadData = async query => {
+    const data = clone(await drive.loadJson(query));
+    if (data) {
+      delete data._kkmtRevision;
+      delete data._kkmtUpdatedAt;
+    }
+    return data;
+  };
   await drive.prepare();
   assert.equal(drive.isConnected(), true);
   await drive.connect();
@@ -134,7 +153,7 @@ vm.runInNewContext(
   });
   assert.equal(records.length, 1);
   assert.deepEqual(
-    clone(await drive.loadJson({ subject: "高コン未定案件", docType: "estimate" })),
+    await loadData({ subject: "高コン未定案件", docType: "estimate" }),
     { fields: { subject: "高コン未定案件" }, version: 1 }
   );
 
@@ -147,7 +166,7 @@ vm.runInNewContext(
   assert.equal(records.length, 1);
   assert.equal(records[0].kocon, "888");
   assert.deepEqual(
-    clone(await drive.loadJson({ kocon: "888", docType: "estimate" })),
+    await loadData({ kocon: "888", docType: "estimate" }),
     { fields: { mKocon: "888", subject: "高コン未定案件" }, version: 2 }
   );
 
@@ -159,7 +178,7 @@ vm.runInNewContext(
   });
   assert.equal(records.length, 2);
   assert.deepEqual(
-    clone(await drive.loadJson({ subject: "作業報告案件", docType: "report" })),
+    await loadData({ subject: "作業報告案件", docType: "report" }),
     { fields: { mKocon: "888", subject: "作業報告案件" }, work: [] }
   );
   assert.equal(window.google, undefined, "central mode must not require Google OAuth library");
@@ -167,8 +186,27 @@ vm.runInNewContext(
   await drive.saveJson({ kocon: "same-a", subject: "同一件名", docType: "estimate", data: { wdays: [], version: 71 } });
   await drive.saveJson({ kocon: "same-b", subject: "同一件名", docType: "estimate", data: { wdays: [], version: 72 } });
   assert.equal(records.filter(record => record.docType === "estimate" && record.subject === "同一件名").length, 2);
-  assert.deepEqual(clone(await drive.loadJson({ kocon: "same-a", docType: "estimate" })), { wdays: [], version: 71 });
-  assert.deepEqual(clone(await drive.loadJson({ kocon: "same-b", docType: "estimate" })), { wdays: [], version: 72 });
+  assert.deepEqual(await loadData({ kocon: "same-a", docType: "estimate" }), { wdays: [], version: 71 });
+  assert.deepEqual(await loadData({ kocon: "same-b", docType: "estimate" }), { wdays: [], version: 72 });
+  await drive.saveJson({ subject: "同一件名", docType: "estimate", data: { wdays: [], version: 73 } });
+  assert.equal(records.filter(record => record.docType === "estimate" && record.subject === "同一件名").length, 3);
+  assert.deepEqual(await loadData({ kocon: "same-b", docType: "estimate" }), { wdays: [], version: 72 });
+
+  const base = await drive.loadJson({ kocon: "same-a", docType: "estimate" });
+  await drive.saveJson({
+    kocon: "same-a", subject: "同一件名", docType: "estimate",
+    expectedRevision: base._kkmtRevision,
+    data: { wdays: [], version: 74, _kkmtRevision: base._kkmtRevision }
+  });
+  await assert.rejects(
+    () => drive.saveJson({
+      kocon: "same-a", subject: "同一件名", docType: "estimate",
+      expectedRevision: base._kkmtRevision,
+      data: { wdays: [], version: 999, _kkmtRevision: base._kkmtRevision }
+    }),
+    /他の端末で更新/
+  );
+  assert.deepEqual(await loadData({ kocon: "same-a", docType: "estimate" }), { wdays: [], version: 74 });
 
   console.log("Central Drive client checks passed.");
 })().catch(error => {
