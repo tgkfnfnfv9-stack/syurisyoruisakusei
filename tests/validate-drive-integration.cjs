@@ -29,7 +29,7 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
   assert.doesNotMatch(html, /accounts\.google\.com\/gsi\/client/);
-  assert.match(html, /<script src="google-drive\.js\?v=20260821-11"><\/script>/);
+  assert.match(html, /<script src="google-drive\.js\?v=20260821-12"><\/script>/);
 }
 
 new vm.Script(drive, { filename: "google-drive.js" });
@@ -125,8 +125,8 @@ assert.match(estimateApp, /function autosaveFromEvent\(event\)\{ const target=ev
 assert.match(reportApp, /function autosaveFromEvent\(event\)\{ const target=event&&event\.target; if\(target&&target\.type==="file"\)return; autosave\(\); \}/);
 assert.match(estimateApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
 assert.match(reportApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
-assert.match(estimate, /google-drive\.js\?v=20260821-11/);
-assert.match(report, /google-drive\.js\?v=20260821-11/);
+assert.match(estimate, /google-drive\.js\?v=20260821-12/);
+assert.match(report, /google-drive\.js\?v=20260821-12/);
 assert.match(drive, /expectedRevision/);
 assert.match(drive, /error\.status === 409/);
 assert.match(drive, /async function whenIdle\(\)/);
@@ -140,6 +140,9 @@ assert.match(reportApp, /buildOutputPair/);
 assert.match(estimateApp, /driveAutosaveController\.whenIdle/);
 assert.match(reportApp, /driveAutosaveController\.whenIdle/);
 assert.match(reportApp, /async function saveState\(\)\{ if\(driveAutosaveController&&driveAutosaveController\.whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
+assert.match(estimateApp, /rd\.onload=async\(\)=>\{ try\{ const state=.*whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
+assert.match(reportApp, /rd\.onload=async\(\)=>\{ try\{ const report=.*whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
+assert.match(reportApp, /rd\.onload=async\(\)=>\{ try\{ const estimate=.*whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
 assert.match(reportApp, /restoreReportDirectEdits\(\); recalcReport\(\)/);
 assert.match(reportApp, /const firstWorkId=/);
 
