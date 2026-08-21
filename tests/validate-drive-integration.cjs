@@ -29,7 +29,7 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
   assert.doesNotMatch(html, /accounts\.google\.com\/gsi\/client/);
-  assert.match(html, /<script src="google-drive\.js\?v=20260821-13"><\/script>/);
+  assert.match(html, /<script src="google-drive\.js\?v=20260821-14"><\/script>/);
 }
 
 new vm.Script(drive, { filename: "google-drive.js" });
@@ -125,8 +125,8 @@ assert.match(estimateApp, /function autosaveFromEvent\(event\)\{ const target=ev
 assert.match(reportApp, /function autosaveFromEvent\(event\)\{ const target=event&&event\.target; if\(target&&target\.type==="file"\)return; autosave\(\); \}/);
 assert.match(estimateApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
 assert.match(reportApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
-assert.match(estimate, /google-drive\.js\?v=20260821-13/);
-assert.match(report, /google-drive\.js\?v=20260821-13/);
+assert.match(estimate, /google-drive\.js\?v=20260821-14/);
+assert.match(report, /google-drive\.js\?v=20260821-14/);
 assert.match(drive, /expectedRevision/);
 assert.match(drive, /error\.status === 409/);
 assert.match(drive, /async function whenIdle\(\)/);
@@ -145,6 +145,8 @@ assert.match(reportApp, /rd\.onload=async\(\)=>\{ try\{ const report=.*whenIdle\
 assert.match(reportApp, /rd\.onload=async\(\)=>\{ try\{ const estimate=.*whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
 assert.match(reportApp, /restoreReportDirectEdits\(\); recalcReport\(\)/);
 assert.match(reportApp, /const firstWorkId=/);
+assert.match(reportApp, /workers","activeWorkers/);
+assert.match(reportApp, /作業データ内の値形式が正しくありません/);
 
 const sectionSeven = report.match(/<h2><span class="n">7<\/span>[\s\S]*?<\/section>/);
 assert.ok(sectionSeven, "report section 7 must exist");
