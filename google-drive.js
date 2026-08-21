@@ -228,9 +228,17 @@
     if (!normalizedKocon && !(docType === "estimate" && normalizedSubject)) {
       throw new DriveError(docType === "estimate" ? "高コンまたは件名が空欄のため保存できません。" : "高コンが空欄のため保存できません。");
     }
-    const expected = Number.isSafeInteger(Number(expectedRevision)) && Number(expectedRevision) >= 0
-      ? Number(expectedRevision)
-      : documentRevision(data);
+    const hasExpectedRevision = expectedRevision != null ||
+      !!(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "_kkmtRevision"));
+    let expected;
+    if (hasExpectedRevision) {
+      expected = Number.isSafeInteger(Number(expectedRevision)) && Number(expectedRevision) >= 0
+        ? Number(expectedRevision)
+        : documentRevision(data);
+    } else {
+      const current = await centralLoad({ kocon: normalizedKocon, subject: normalizedSubject, docType });
+      expected = documentRevision(current);
+    }
     await fetch(CONFIG.centralBackendUrl, {
       method: "POST",
       mode: "no-cors",
@@ -579,7 +587,9 @@
     requireDocType(docType);
     const normalized = normalizeKocon(kocon);
     const normalizedSubject = normalizeSubject(subject);
-    const expected = Number.isSafeInteger(Number(expectedRevision)) && Number(expectedRevision) >= 0
+    const suppliedRevision = expectedRevision != null ||
+      !!(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "_kkmtRevision"));
+    let expected = Number.isSafeInteger(Number(expectedRevision)) && Number(expectedRevision) >= 0
       ? Number(expectedRevision)
       : documentRevision(data);
     if (!normalized && !(docType === "estimate" && normalizedSubject)) {
@@ -598,6 +608,7 @@
       if (!candidateKocon) existing = byPreviousSubject;
     }
     const existingRevision = existing ? Number((existing.appProperties && existing.appProperties.revision) || 0) : 0;
+    if (!suppliedRevision) expected = existingRevision;
     if ((existing && existingRevision !== expected) || (!existing && expected !== 0)) {
       throw new DriveError("他の端末で更新されています。最新データを読み込んでから、もう一度保存してください。", 409);
     }
