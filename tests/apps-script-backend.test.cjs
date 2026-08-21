@@ -77,6 +77,7 @@ let result = request({
   data: { fields: { subject: "クラッチ交換", mKocon: "" }, version: 1 }
 });
 assert.equal(result.ok, true);
+let estimateRevision = result.result.revision;
 const rootFolder = root.folders.find(folder => folder.name === "小林機械 書類データ");
 const estimateFolder = rootFolder.folders.find(folder => folder.name === "見積もり");
 assert.equal(estimateFolder.files[0].name, "クラッチ交換_見積もり.json");
@@ -88,9 +89,11 @@ result = request({
   docType: "estimate",
   kocon: "12345",
   subject: "クラッチ交換",
+  expectedRevision: estimateRevision,
   data: { fields: { subject: "クラッチ交換", mKocon: "12345" }, version: 2 }
 });
 assert.equal(result.ok, true);
+estimateRevision = result.result.revision;
 assert.equal(estimateFolder.files.length, 1);
 assert.equal(estimateFolder.files[0].id, estimateId);
 assert.equal(estimateFolder.files[0].name, "高コン12345_クラッチ交換_見積もり.json");
@@ -161,6 +164,20 @@ const staleResult = request({
 });
 assert.equal(staleResult.ok, false);
 assert.match(staleResult.error, /CONFLICT/);
+assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "200" }).result.version, 6);
+const legacyStale = request({
+  action: "save", pin, docType: "estimate", kocon: "200", subject: "クラッチ交換",
+  data: { fields: { subject: "クラッチ交換", mKocon: "200" }, version: 998 }
+});
+assert.equal(legacyStale.ok, false);
+assert.match(legacyStale.error, /CONFLICT/);
+const malformedSave = request({
+  action: "save", pin, docType: "estimate", kocon: "200", subject: "クラッチ交換",
+  expectedRevision: current200._kkmtRevision + 1,
+  data: { _kkmtRevision: current200._kkmtRevision + 1 }
+});
+assert.equal(malformedSave.ok, false);
+assert.match(malformedSave.error, /必須項目/);
 assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "200" }).result.version, 6);
 
 result = request({
