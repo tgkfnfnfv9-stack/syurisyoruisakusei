@@ -178,6 +178,17 @@ const malformedSave = request({
 });
 assert.equal(malformedSave.ok, false);
 assert.match(malformedSave.error, /必須項目/);
+const nestedMalformedSave = request({
+  action: "save", pin, docType: "estimate", kocon: "200", subject: "クラッチ交換",
+  expectedRevision: current200._kkmtRevision + 1,
+  data: {
+    fields: { subject: "クラッチ交換", mKocon: "200" },
+    wdays: [null],
+    _kkmtRevision: current200._kkmtRevision + 1
+  }
+});
+assert.equal(nestedMalformedSave.ok, false);
+assert.match(nestedMalformedSave.error, /項目形式/);
 assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "200" }).result.version, 6);
 
 result = request({
@@ -190,6 +201,19 @@ result = request({
 });
 assert.equal(result.ok, true);
 assert.equal(reportFolder.files.length, 2);
+assert.equal(request({ action: "load", pin, docType: "report", kocon: "200" }).result.version, 4);
+const report200 = request({ action: "load", pin, docType: "report", kocon: "200" }).result;
+const malformedPeople = request({
+  action: "save", pin, docType: "report", kocon: "200", subject: "クラッチ交換",
+  expectedRevision: report200._kkmtRevision,
+  data: {
+    fields: { subject: "クラッチ交換", mKocon: "200" },
+    work: [{ people: "bad" }],
+    _kkmtRevision: report200._kkmtRevision
+  }
+});
+assert.equal(malformedPeople.ok, false);
+assert.match(malformedPeople.error, /作業者データ/);
 assert.equal(request({ action: "load", pin, docType: "report", kocon: "200" }).result.version, 4);
 
 const malformed = context.doPost({ postData: { contents: "{" } });
