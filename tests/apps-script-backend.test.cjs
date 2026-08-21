@@ -214,6 +214,29 @@ const malformedPeople = request({
 });
 assert.equal(malformedPeople.ok, false);
 assert.match(malformedPeople.error, /作業者データ/);
+const malformedWorkers = request({
+  action: "save", pin, docType: "report", kocon: "200", subject: "クラッチ交換",
+  expectedRevision: report200._kkmtRevision,
+  data: {
+    fields: { subject: "クラッチ交換", mKocon: "200" },
+    work: [],
+    workers: [{}],
+    _kkmtRevision: report200._kkmtRevision
+  }
+});
+assert.equal(malformedWorkers.ok, false);
+assert.match(malformedWorkers.error, /workers の要素形式/);
+const malformedWorkerField = request({
+  action: "save", pin, docType: "report", kocon: "200", subject: "クラッチ交換",
+  expectedRevision: report200._kkmtRevision,
+  data: {
+    fields: { subject: "クラッチ交換", mKocon: "200" },
+    work: [{ people: [{ worker: {}, hours: "1" }] }],
+    _kkmtRevision: report200._kkmtRevision
+  }
+});
+assert.equal(malformedWorkerField.ok, false);
+assert.match(malformedWorkerField.error, /作業データ内の値形式/);
 assert.equal(request({ action: "load", pin, docType: "report", kocon: "200" }).result.version, 4);
 
 const malformed = context.doPost({ postData: { contents: "{" } });
