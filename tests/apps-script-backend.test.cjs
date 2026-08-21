@@ -114,4 +114,33 @@ assert.equal(reportFolder.files[0].name, "高コン12345_報告書.json");
 assert.equal(request({ action: "load", pin, docType: "report", subject: "クラッチ交換" }).result.work.length, 0);
 assert.equal(request({ action: "save", pin, docType: "report", subject: "高コンなし", data: {} }).ok, false);
 
+
+result = request({
+  action: "save",
+  pin,
+  docType: "estimate",
+  kocon: "200",
+  subject: "クラッチ交換",
+  data: { fields: { subject: "クラッチ交換", mKocon: "200" }, wdays: [], version: 3 }
+});
+assert.equal(result.ok, true);
+assert.equal(estimateFolder.files.length, 2);
+assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "12345" }).result.version, 2);
+assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "200" }).result.version, 3);
+
+result = request({
+  action: "save",
+  pin,
+  docType: "report",
+  kocon: "200",
+  subject: "クラッチ交換",
+  data: { fields: { subject: "クラッチ交換", mKocon: "200" }, work: [], version: 4 }
+});
+assert.equal(result.ok, true);
+assert.equal(reportFolder.files.length, 2);
+assert.equal(request({ action: "load", pin, docType: "report", kocon: "200" }).result.version, 4);
+
+const malformed = context.doPost({ postData: { contents: "{" } });
+assert.equal(JSON.parse(malformed.getContent()).ok, false);
+
 console.log("Apps Script backend checks passed.");
