@@ -11,9 +11,8 @@ function findRecord(docType, kocon, subject) {
   const normalizedKocon = normalize(kocon);
   const normalizedSubject = normalize(subject);
   const sameType = records.filter(record => record.docType === docType);
-  return (normalizedKocon && sameType.find(record => record.kocon === normalizedKocon)) ||
-    (normalizedSubject && sameType.find(record => record.subject === normalizedSubject)) ||
-    null;
+  if (normalizedKocon) return sameType.find(record => record.kocon === normalizedKocon) || null;
+  return (normalizedSubject && sameType.find(record => record.subject === normalizedSubject)) || null;
 }
 
 const window = {
@@ -74,9 +73,14 @@ async function centralFetch(url, options = {}) {
 
   const kocon = normalize(request.kocon);
   const subject = normalize(request.subject);
-  let existing = findRecord(request.docType, kocon, subject);
+  let existing = kocon ? findRecord(request.docType, kocon, "") : findRecord(request.docType, "", subject);
+  if (!existing && subject) {
+    const bySubject = findRecord(request.docType, "", subject);
+    if (!kocon || (bySubject && !bySubject.kocon)) existing = bySubject;
+  }
   if (!existing && request.previousSubject) {
-    existing = findRecord(request.docType, "", request.previousSubject);
+    const byPreviousSubject = findRecord(request.docType, "", request.previousSubject);
+    if (!kocon || (byPreviousSubject && !byPreviousSubject.kocon)) existing = byPreviousSubject;
   }
   if (!existing) {
     existing = { docType: request.docType, kocon, subject, data: null };
@@ -159,6 +163,12 @@ vm.runInNewContext(
     { fields: { mKocon: "888", subject: "作業報告案件" }, work: [] }
   );
   assert.equal(window.google, undefined, "central mode must not require Google OAuth library");
+
+  await drive.saveJson({ kocon: "same-a", subject: "同一件名", docType: "estimate", data: { wdays: [], version: 71 } });
+  await drive.saveJson({ kocon: "same-b", subject: "同一件名", docType: "estimate", data: { wdays: [], version: 72 } });
+  assert.equal(records.filter(record => record.docType === "estimate" && record.subject === "同一件名").length, 2);
+  assert.deepEqual(clone(await drive.loadJson({ kocon: "same-a", docType: "estimate" })), { wdays: [], version: 71 });
+  assert.deepEqual(clone(await drive.loadJson({ kocon: "same-b", docType: "estimate" })), { wdays: [], version: 72 });
 
   console.log("Central Drive client checks passed.");
 })().catch(error => {
