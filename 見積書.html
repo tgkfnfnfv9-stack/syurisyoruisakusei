@@ -732,17 +732,18 @@ const esc=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"
 const parseNum=s=>parseFloat(String(s).replace(/[^0-9.\-]/g,""))||0;
 const fmt=n=>{ n=Math.round(n*10)/10; return Number.isInteger(n)?String(n):n.toFixed(1); };
 let driveAutosaveController=null;
+function newRowId(prefix){ return prefix+"_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,10); }
 
-function addPartRow(v){ const row=$("partRow").content.cloneNode(true).querySelector(".prow"); const pc=row.querySelector(".pc"),pa=row.querySelector(".pa"),pq=row.querySelector(".pq");
+function addPartRow(v){ const row=$("partRow").content.cloneNode(true).querySelector(".prow"); row.dataset.rowId=(v&&v.id)||newRowId("part"); const pc=row.querySelector(".pc"),pa=row.querySelector(".pa"),pq=row.querySelector(".pq");
   pc.addEventListener("input",()=>{ if(pc.value!=="")pa.value=Math.round(parseNum(pc.value)/0.8); });
   row.querySelector(".del").addEventListener("click",()=>row.remove());
   if(v){ row.querySelector(".pn").value=v.name||""; pc.value=v.cost||""; pa.value=v.excl||""; if(v.qty!=null&&v.qty!=="")pq.value=v.qty; } $("partsList").appendChild(row); }
-function partRowsRaw(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>({name:r.querySelector(".pn").value,cost:r.querySelector(".pc").value,excl:r.querySelector(".pa").value,qty:r.querySelector(".pq").value})); }
-function getParts(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>{ const name=r.querySelector(".pn").value.trim(),cost=parseNum(r.querySelector(".pc").value); let excl=parseNum(r.querySelector(".pa").value); if(!excl&&cost)excl=Math.round(cost/0.8); const q=Math.max(0,parseNum(r.querySelector(".pq").value))||1; const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {name:dispName,amt:excl*q}; }).filter(p=>p.name||p.amt); }
-function addCustomRow(v){ const row=$("customRow").content.cloneNode(true).querySelector(".crow"); row.querySelector(".del").addEventListener("click",()=>row.remove());
+function partRowsRaw(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>({id:r.dataset.rowId||newRowId("part"),name:r.querySelector(".pn").value,cost:r.querySelector(".pc").value,excl:r.querySelector(".pa").value,qty:r.querySelector(".pq").value})); }
+function getParts(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>{ const name=r.querySelector(".pn").value.trim(),cost=parseNum(r.querySelector(".pc").value); let excl=parseNum(r.querySelector(".pa").value); if(!excl&&cost)excl=Math.round(cost/0.8); const q=Math.max(0,parseNum(r.querySelector(".pq").value))||1; const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {key:"part:"+(r.dataset.rowId||newRowId("part")),name:dispName,amt:excl*q}; }).filter(p=>p.name||p.amt); }
+function addCustomRow(v){ const row=$("customRow").content.cloneNode(true).querySelector(".crow"); row.dataset.rowId=(v&&v.id)||newRowId("custom"); row.querySelector(".del").addEventListener("click",()=>row.remove());
   if(v){ row.querySelector(".cn").value=v.name||""; row.querySelector(".ca").value=v.amt||""; const cq=row.querySelector(".cq"); if(v.qty!=null&&v.qty!=="")cq.value=v.qty; } $("customList").appendChild(row); }
-function customRowsRaw(){ return [...document.querySelectorAll("#customList .crow")].map(r=>({name:r.querySelector(".cn").value,amt:r.querySelector(".ca").value,qty:r.querySelector(".cq").value})); }
-function getCustom(){ return [...document.querySelectorAll("#customList .crow")].map(r=>{ const name=r.querySelector(".cn").value.trim(); const amt=parseNum(r.querySelector(".ca").value); const q=Math.max(0,parseNum(r.querySelector(".cq").value))||1; const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {name:dispName,amt:amt*q}; }).filter(c=>c.name); }
+function customRowsRaw(){ return [...document.querySelectorAll("#customList .crow")].map(r=>({id:r.dataset.rowId||newRowId("custom"),name:r.querySelector(".cn").value,amt:r.querySelector(".ca").value,qty:r.querySelector(".cq").value})); }
+function getCustom(){ return [...document.querySelectorAll("#customList .crow")].map(r=>{ const name=r.querySelector(".cn").value.trim(); const amt=parseNum(r.querySelector(".ca").value); const q=Math.max(0,parseNum(r.querySelector(".cq").value))||1; const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {key:"custom:"+(r.dataset.rowId||newRowId("custom")),name:dispName,amt:amt*q}; }).filter(c=>c.name); }
 
 function syncWE(){ recomputeWorkFee(); }
 function syncBase(){ $("b1card").classList.toggle("off",!$("b1_use").checked); $("b2card").classList.toggle("off",!$("b2_use").checked); $("b3card").classList.toggle("off",!$("b3_use").checked); }
@@ -795,31 +796,31 @@ function openMap(p,kind){ const o=originAddr(p),d=$("address").value.trim(); if(
 function originAddr(p){ return p==="b3" ? $("b3_addr").value.trim() : (ORIGINS[p]?ORIGINS[p].addr:""); }
 function originLabel(p){ return p==="b3" ? "その他" : (ORIGINS[p]?ORIGINS[p].label:""); }
 function baseData(p){ const use=$(p+"_use").checked; const modeEl=$(p+"_mode"); const mode=modeEl?modeEl.value:"round"; const mult=mode==="oneway"?1:2;
-  return { use,label:originLabel(p), mode, mult, km:Math.max(0,parseNum($(p+"_km").value)), h:Math.max(0,parseNum($(p+"_h").value)), toll:Math.max(0,parseNum($(p+"_toll").value)),
+  return { id:p,use,label:originLabel(p), mode, mult, km:Math.max(0,parseNum($(p+"_km").value)), h:Math.max(0,parseNum($(p+"_h").value)), toll:Math.max(0,parseNum($(p+"_toll").value)),
     people:Math.max(0,parseNum($(p+"_people").value)||0), veh:Math.max(0,parseNum($(p+"_vehicles").value)||0),
     tripsWd:Math.max(0,parseNum($(p+"_tripsWd").value)||0), tripsWe:Math.max(0,parseNum($(p+"_tripsWe").value)||0) }; }
 
 function computeItems(){
   const bases=[baseData("b1"),baseData("b2"),baseData("b3")].filter(b=>b.use);
   const both=bases.length>1;
-  const workAmt=Math.max(0,parseNum($("workFee").value)); const items=[]; if(workAmt>0) items.push({name:workName(),amt:workAmt});
+  const workAmt=Math.max(0,parseNum($("workFee").value)); const items=[]; if(workAmt>0) items.push({key:"work",name:workName(),amt:workAmt});
   let totalPeople=0; const trans=[],trav=[],tolls=[];
   bases.forEach(b=>{ totalPeople+=b.people; const rKm=b.km*b.mult,rH=b.h*b.mult,tf=b.tripsWd+P.WEEKEND*b.tripsWe,tp=b.tripsWd+b.tripsWe,rate=b.km>=250?P.TRAVEL_FAR:P.TRAVEL,mw=b.mode==="oneway"?"片道":"往復";
     const sfx=both?`（${b.label}）`:""; const eH=rH<=0?0:Math.max(rH,1);
-    if(rKm>0) trans.push({name:`交通費${sfx}（100円×${mw}${fmt(rKm)}㎞）\n※概算になります`,amt:P.TRANSPORT*rKm*b.veh*tf});
-    if(eH>0) trav.push({name:`移動費${sfx}（${num(rate)}円×${mw}${fmt(eH)}H）\n※概算になります`,amt:rate*eH*b.people*tf});
-    const tlPer=taxExclude(b.toll*b.mult); const tl=tlPer*tp*b.veh; if(tl>0||b.toll>0) tolls.push({name:`高速代${sfx}\n※概算になります`,amt:tl});
+    if(rKm>0) trans.push({key:"transport:"+b.id,name:`交通費${sfx}（100円×${mw}${fmt(rKm)}㎞）\n※概算になります`,amt:P.TRANSPORT*rKm*b.veh*tf});
+    if(eH>0) trav.push({key:"travel:"+b.id,name:`移動費${sfx}（${num(rate)}円×${mw}${fmt(eH)}H）\n※概算になります`,amt:rate*eH*b.people*tf});
+    const tlPer=taxExclude(b.toll*b.mult); const tl=tlPer*tp*b.veh; if(tl>0||b.toll>0) tolls.push({key:"toll:"+b.id,name:`高速代${sfx}\n※概算になります`,amt:tl});
   });
   trans.forEach(x=>items.push(x)); trav.forEach(x=>items.push(x)); tolls.forEach(x=>items.push(x));
   const unit=Math.max(0,parseNum($("lodgeUnit").value)); const lt=lodgeTotals();
-  const lodge=unit*(lt.wd+P.WEEKEND*lt.we); if(lodge>0) items.push({name:"宿泊費",amt:lodge});
-  getParts().forEach(p=>items.push({name:p.name,amt:p.amt}));
-  getCustom().forEach(c=>items.push({name:c.name,amt:c.amt}));
+  const lodge=unit*(lt.wd+P.WEEKEND*lt.we); if(lodge>0) items.push({key:"lodging",name:"宿泊費",amt:lodge});
+  getParts().forEach(p=>items.push(p));
+  getCustom().forEach(c=>items.push(c));
   return items;
 }
 
 function fmtDate(v){ const d=v?new Date(v+"T00:00:00"):new Date(); return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; }
-function itemKeyList(items){ const seen=new Map(); return items.map(item=>{ const base=String(item.name||"").trim().replace(/\s+/g," "); const count=(seen.get(base)||0)+1; seen.set(base,count); return "item:"+encodeURIComponent(base)+":"+count; }); }
+function itemKeyList(items){ const seen=new Map(); return items.map(item=>{ if(item.key)return String(item.key); const base=String(item.name||"").trim().replace(/\s+/g," "); const count=(seen.get(base)||0)+1; seen.set(base,count); return "legacy:"+encodeURIComponent(base)+":"+count; }); }
 function itemRowHTML(rn,name,amt,key){ return `<tr class="item-row" data-item-key="${esc(key)}"><td class="c-code"><span class="rn">${rn}</span><button class="rowdel" title="行を削除">×</button></td><td class="c-name">${name}</td><td class="c-qty">1</td><td class="c-unit">式</td><td class="c-price">${amt}</td><td class="c-amt">${amt}</td><td class="c-note" contenteditable="true"></td></tr>`; }
 function enforceSheetEditability(){ const sheet=$("sheet"); if(!sheet)return;
   sheet.querySelectorAll("[contenteditable]").forEach(el=>el.removeAttribute("contenteditable"));
@@ -901,11 +902,17 @@ function scheduleLivePreview(event){ if(event&&event.target&&event.target.id==="
 const SIMPLE_IDS=["mKocon","client","subject","workDate","dateType","address","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_tripsWe","workFee","lodgeUnit"];
 function validateEstimateState(s){ if(!s||typeof s!=="object"||Array.isArray(s))throw new Error("見積データの形式ではありません。");
   const type=s.documentType||s._kkmtDocumentType||""; if(type&&type!=="estimate")throw new Error("別の種類の書類データです。");
-  if(!s.fields||typeof s.fields!=="object"||!Array.isArray(s.wdays))throw new Error("見積データの必須項目がありません。");
+  if(!s.fields||typeof s.fields!=="object"||Array.isArray(s.fields))throw new Error("見積データの必須項目がありません。");
+  for(const key of ["parts","customs","lodges","wdays"]){ if(key in s&&!Array.isArray(s[key]))throw new Error(key+" の形式が正しくありません。"); }
+  for(const key of ["parts","customs","lodges","wdays"]){ if(Array.isArray(s[key])&&s[key].some(item=>!item||typeof item!=="object"||Array.isArray(item)))throw new Error(key+" の項目形式が正しくありません。"); }
+  if("directEdits" in s&&(!s.directEdits||typeof s.directEdits!=="object"||Array.isArray(s.directEdits)))throw new Error("直接編集データの形式が正しくありません。");
+  if("excludedItemKeys" in s&&!Array.isArray(s.excludedItemKeys))throw new Error("除外項目データの形式が正しくありません。");
+  if(!Array.isArray(s.wdays))s.wdays=[]; if(!Array.isArray(s.parts))s.parts=[]; if(!Array.isArray(s.customs))s.customs=[];
   return s;
 }
-function collectState(){ const directEdits=captureDirectEdits(); const s={documentType:"estimate",schemaVersion:2,fields:{},parts:partRowsRaw(),customs:customRowsRaw(),wdays:wdayRows(),lodges:lodgeRows(),directEdits,excludedItemKeys:[..._excludedItemKeys]}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); return s; }
-function applyState(raw){ if(!raw)return; const s=validateEstimateState(raw); clearTimeout(_livePreviewT); setDirectEdits(migrateLegacyDirectEdits(s)); _excludedItemKeys=new Set(Array.isArray(s.excludedItemKeys)?s.excludedItemKeys.map(String):[]); const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
+let _documentRevision=0;
+function collectState(){ const directEdits=captureDirectEdits(); const s={documentType:"estimate",schemaVersion:2,_kkmtRevision:_documentRevision,fields:{},parts:partRowsRaw(),customs:customRowsRaw(),wdays:wdayRows(),lodges:lodgeRows(),directEdits,excludedItemKeys:[..._excludedItemKeys]}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); return s; }
+function applyState(raw){ if(!raw)return; const s=validateEstimateState(raw); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); setDirectEdits(migrateLegacyDirectEdits(s)); _excludedItemKeys=new Set(Array.isArray(s.excludedItemKeys)?s.excludedItemKeys.map(String):[]); const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("wdList").innerHTML=""; (s.wdays&&s.wdays.length?s.wdays:[null]).forEach(w=>addWdayRow(w));
@@ -915,7 +922,9 @@ function applyState(raw){ if(!raw)return; const s=validateEstimateState(raw); cl
 /* ===== 自動保存（下書き）：APIキー(kkmt_gkey)は別枠なので消えない ===== */
 const DRAFT_KEY="kkmt_est_draft";
 let _autosaveT=null;
-function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } },400); }
+function writeLocalDraftNow(){ clearTimeout(_autosaveT); _autosaveT=null; try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } }
+function cancelLocalAutosave(){ clearTimeout(_autosaveT); _autosaveT=null; }
+function autosave(){ cancelLocalAutosave(); _autosaveT=setTimeout(writeLocalDraftNow,400); }
 function autosaveFromEvent(event){ const target=event&&event.target; if(target&&target.type==="file")return; autosave(); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
 function resetAll(){ if(!confirm("すべての入力を消去します。APIキーは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
@@ -947,17 +956,17 @@ async function autoLoadEstimateFromDrive({kocon,isConnected,setStatus}){
   if(!isConnected)return false;
   setStatus(`高コン「${kocon}」の見積もりを自動取得中…`);
   const estimate=await KKMTDrive.loadJson({kocon,docType:"estimate"});
-  if(!estimate){ setStatus(`新しい見積もりです。入力内容を見積もりファイルへ自動保存します。`,"ok"); return true; }
+  if(!estimate){ _documentRevision=0; setStatus(`新しい見積もりです。入力内容を見積もりファイルへ自動保存します。`,"ok"); return {confirmed:true,revision:0}; }
   applyState(estimate);
   $("mKocon").value=kocon;
   setStatus("見積もりを自動取得しました。","ok");
-  return true;
+  return {confirmed:true,revision:_documentRevision};
 }
 
 function fileBaseName(){ const kocon=($("mKocon").value||"").trim(); const subject=($("subject").value||"件名未入力").trim(); return [...[kocon,subject].filter(Boolean),"見積もり"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
 function flushLivePreview(){ clearTimeout(_livePreviewT); renderSheet(); }
-async function buildPdf(){
-  flushLivePreview();
+async function buildPdf(flush=true){
+  if(flush)flushLivePreview();
   fitSheet();
   const el=$("sheet");
   if(!(window.html2canvas && window.jspdf)){ alert("PDF部品の読み込みに失敗しました。ページを開き直してください。"); return null; }
@@ -976,7 +985,8 @@ async function buildPdf(){
   const blob=pdf.output("blob");
   return {blob,name,file:new File([blob],name,{type:"application/pdf"})};
 }
-function buildStateFile(){ flushLivePreview(); const s=collectState(); const name=fileBaseName()+".json"; const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"}); return {blob,name,file:new File([blob],name,{type:"application/json"})}; }
+function buildStateFile(state=null,flush=true){ if(flush)flushLivePreview(); const s=state||collectState(); const name=fileBaseName()+".json"; const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"}); return {blob,name,file:new File([blob],name,{type:"application/json"})}; }
+async function buildOutputPair(){ const app=document.querySelector(".app"); const oldPointer=app.style.pointerEvents; const oldInert=app.inert; try{ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); flushLivePreview(); const snapshot=collectState(); app.style.pointerEvents="none"; app.inert=true; const pdf=await buildPdf(false); if(!pdf)return null; return {pdf,json:buildStateFile(snapshot,false)}; }finally{ app.inert=oldInert; app.style.pointerEvents=oldPointer; } }
 function downloadBlob(blob,name,openTab){ const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ if(openTab){ try{ window.open(url,"_blank"); }catch(e){} } setTimeout(()=>URL.revokeObjectURL(url),60000); },800); }
 async function pcSaveOne(blob,name,mime,ext){ if(!(IS_PC && window.showSaveFilePicker)) return false;
   let h; try{ h=await window.showSaveFilePicker({suggestedName:name,types:[{description:mime,accept:{[mime]:[ext]}}]}); }
@@ -991,11 +1001,10 @@ function applyDeviceMode(){ const sel=$("devMode"); if(!sel)return; IS_PC=(sel.v
   set("dataBtn", IS_PC?"データ保存":"データを共有");
   try{ localStorage.setItem("kkmt_devmode", sel.value); }catch(e){} }
 async function saveBoth(){ try{
-    if(IS_PC && window.showDirectoryPicker){
-      let dir=null; try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }catch(err){ if(err&&err.name==="AbortError")return; dir=null; }
-      if(dir){ const pdf=await buildPdf(); if(!pdf)return; const json=buildStateFile();
-        try{ for(const f of [json,pdf]){ const fh=await dir.getFileHandle(f.name,{create:true}); const w=await fh.createWritable(); await w.write(f.blob); await w.close(); } return; }catch(err){ console.error(err); } } }
-    const pdf=await buildPdf(); if(!pdf)return; const json=buildStateFile();
+    let dir=null;
+    if(IS_PC && window.showDirectoryPicker){ try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }catch(err){ if(err&&err.name==="AbortError")return; dir=null; } }
+    const pair=await buildOutputPair(); if(!pair)return; const {pdf,json}=pair;
+    if(dir){ try{ for(const f of [json,pdf]){ const fh=await dir.getFileHandle(f.name,{create:true}); const w=await fh.createWritable(); await w.write(f.blob); await w.close(); } return; }catch(err){ console.error(err); } }
     if(!IS_PC && navigator.canShare && navigator.canShare({files:[pdf.file,json.file]})){ try{ await navigator.share({files:[pdf.file,json.file],title:"見積PDF＋データ"}); return; }catch(err){ if(err&&err.name==="AbortError")return; } }
     downloadBlob(json.blob,json.name,false); setTimeout(()=>downloadBlob(pdf.blob,pdf.name,true),1200);
   }catch(e){ console.error(e); alert("保存に失敗しました。もう一度お試しください。"); } }
@@ -1047,6 +1056,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     connectButton:$("driveConnectBtn"),
     collectState,
     onKoconConfirmed:autoLoadEstimateFromDrive,
+    onIdentityChanging:cancelLocalAutosave,
+    onIdentityChanged:writeLocalDraftNow,
+    onSavedRevision:revision=>{ _documentRevision=revision; },
     skipInitialLoad:restoredDraft
   });
   driveAutosaveController.init();
