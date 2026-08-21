@@ -371,11 +371,12 @@ vm.runInNewContext(
     fields: { mKocon: "", subject: "オフライン昇格" }, wdays: []
   };
   const offlineKocon = makeInput("");
+  const offlineSubject = makeInput("オフライン昇格");
   const offlineController = offlineDrive.createAutosaveController({
     docType: "estimate",
     rootElement: { addEventListener() {} },
     koconInput: offlineKocon,
-    fallbackInput: makeInput("オフライン昇格"),
+    fallbackInput: offlineSubject,
     statusElement: makeStatus(),
     connectButton: makeButton(),
     collectState: () => clone(offlineState),
@@ -383,6 +384,12 @@ vm.runInNewContext(
   });
   await offlineController.markDirty({ immediate: true });
   assert.equal(offlineStorage.length, 1);
+  offlineSubject.value = "オフライン昇格・新件名";
+  offlineState.fields.subject = "オフライン昇格・新件名";
+  await offlineController.markDirty({ immediate: true });
+  assert.equal(offlineStorage.length, 1);
+  assert.match(offlineStorage.key(0), /s_/);
+  assert.doesNotMatch(offlineStorage.getItem(offlineStorage.key(0)), /"subject":"オフライン昇格"/);
   offlineKocon.value = "offline-777";
   offlineState.fields.mKocon = "offline-777";
   await offlineController.confirmCurrentKocon({ save: true });
