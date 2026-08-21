@@ -142,6 +142,14 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js")
 
 (async () => {
   const drive = window.KKMTDrive;
+  const loadData = async query => {
+    const data = await drive.loadJson(query);
+    if (data) {
+      delete data._kkmtRevision;
+      delete data._kkmtUpdatedAt;
+    }
+    return data;
+  };
   await drive.prepare();
   await drive.connect();
 
@@ -149,14 +157,14 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js")
   await drive.saveJson({ kocon: "12345", subject: "研磨機修理", docType: "estimate", data: { version: 2 } });
   await drive.saveJson({ kocon: "12345", subject: "作業報告案件", docType: "report", data: { version: 10 } });
 
-  assert.deepEqual(await drive.loadJson({ kocon: "12345", docType: "estimate" }), { version: 2 });
-  assert.deepEqual(await drive.loadJson({ kocon: "12345", docType: "report" }), { version: 10 });
-  assert.deepEqual(await drive.loadJson({ subject: "研磨機修理", docType: "estimate" }), { version: 2 });
-  assert.deepEqual(await drive.loadJson({ subject: "作業報告案件", docType: "report" }), { version: 10 });
+  assert.deepEqual(await loadData({ kocon: "12345", docType: "estimate" }), { version: 2 });
+  assert.deepEqual(await loadData({ kocon: "12345", docType: "report" }), { version: 10 });
+  assert.deepEqual(await loadData({ subject: "研磨機修理", docType: "estimate" }), { version: 2 });
+  assert.deepEqual(await loadData({ subject: "作業報告案件", docType: "report" }), { version: 10 });
   const reportForLegacySearch = [...files.values()].find(file => file.appProperties?.docType === "report");
   delete reportForLegacySearch.appProperties.subjectKey;
   reportForLegacySearch.data = { fields: { subject: "作業報告案件" }, version: 10, _kkmtDocumentType: "report" };
-  assert.deepEqual(await drive.loadJson({ subject: "作業報告案件", docType: "report" }), { fields: { subject: "作業報告案件" }, version: 10 });
+  assert.deepEqual(await loadData({ subject: "作業報告案件", docType: "report" }), { fields: { subject: "作業報告案件" }, version: 10 });
   reportForLegacySearch.appProperties.subjectKey = "作業報告案件";
 
   const documents = [...files.values()].filter(file => file.appProperties);
@@ -175,22 +183,40 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js")
   const promotedDraft = [...files.values()].find(file => file.id === subjectDraftId);
   assert.equal(promotedDraft.name, "高コン888_高コン未定案件_見積もり.json");
   assert.equal(promotedDraft.appProperties.kocon, "888");
-  assert.deepEqual(await drive.loadJson({ kocon: "888", docType: "estimate" }), { version: 31 });
-  assert.deepEqual(await drive.loadJson({ subject: "高コン未定案件", docType: "estimate" }), { version: 31 });
+  assert.deepEqual(await loadData({ kocon: "888", docType: "estimate" }), { version: 31 });
+  assert.deepEqual(await loadData({ subject: "高コン未定案件", docType: "estimate" }), { version: 31 });
   assert.equal([...files.values()].filter(file => file.appProperties?.subjectKey === "高コン未定案件").length, 1);
   await drive.saveJson({ kocon: "999", subject: "高コン未定案件", docType: "estimate", data: { version: 32 } });
   assert.equal([...files.values()].filter(file => file.appProperties?.subjectKey === "高コン未定案件").length, 2);
-  assert.deepEqual(await drive.loadJson({ kocon: "888", docType: "estimate" }), { version: 31 });
-  assert.deepEqual(await drive.loadJson({ kocon: "999", docType: "estimate" }), { version: 32 });
+  assert.deepEqual(await loadData({ kocon: "888", docType: "estimate" }), { version: 31 });
+  assert.deepEqual(await loadData({ kocon: "999", docType: "estimate" }), { version: 32 });
+  await drive.saveJson({ subject: "高コン未定案件", docType: "estimate", data: { version: 33 } });
+  assert.equal([...files.values()].filter(file => file.appProperties?.subjectKey === "高コン未定案件").length, 3);
+  assert.deepEqual(await loadData({ kocon: "999", docType: "estimate" }), { version: 32 });
   await drive.saveJson({ kocon: "report-a", subject: "同一件名", docType: "report", data: { work: [], version: 51 } });
   await drive.saveJson({ kocon: "report-b", subject: "同一件名", docType: "report", data: { work: [], version: 52 } });
-  assert.deepEqual(await drive.loadJson({ kocon: "report-a", docType: "report" }), { work: [], version: 51 });
-  assert.deepEqual(await drive.loadJson({ kocon: "report-b", docType: "report" }), { work: [], version: 52 });
+  assert.deepEqual(await loadData({ kocon: "report-a", docType: "report" }), { work: [], version: 51 });
+  assert.deepEqual(await loadData({ kocon: "report-b", docType: "report" }), { work: [], version: 52 });
   await drive.saveJson({ subject: "変更前件名", docType: "estimate", data: { version: 40 } });
   const renamedSubjectDraft = [...files.values()].find(file => file.appProperties?.subjectKey === "変更前件名");
   await drive.saveJson({ subject: "変更後件名", previousSubject: "変更前件名", docType: "estimate", data: { version: 41 } });
   assert.equal([...files.values()].find(file => file.id === renamedSubjectDraft.id).name, "変更後件名_見積もり.json");
   assert.equal([...files.values()].filter(file => ["変更前件名","変更後件名"].includes(file.appProperties?.subjectKey)).length, 1);
+  const revisionBase = await drive.loadJson({ kocon: "12345", docType: "estimate" });
+  const revisionResult = await drive.saveJson({
+    kocon: "12345", subject: "研磨機修理", docType: "estimate",
+    expectedRevision: revisionBase._kkmtRevision,
+    data: { version: 3, _kkmtRevision: revisionBase._kkmtRevision }
+  });
+  assert.equal(revisionResult.revision, revisionBase._kkmtRevision + 1);
+  await assert.rejects(
+    () => drive.saveJson({
+      kocon: "12345", subject: "研磨機修理", docType: "estimate",
+      expectedRevision: revisionBase._kkmtRevision,
+      data: { version: 999, _kkmtRevision: revisionBase._kkmtRevision }
+    }),
+    /他の端末で更新/
+  );
   await assert.rejects(
     () => drive.saveJson({ kocon: "12345", docType: "other", data: {} }),
     /不明な書類種別/
@@ -226,7 +252,7 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js")
   assert.equal(estimateFlush.length, 1);
   assert.equal(localStorage.getItem("kkmt_drive_pending_estimate_200"), null);
   assert.notEqual(localStorage.getItem("kkmt_drive_pending_report_300"), null);
-  assert.deepEqual(await drive.loadJson({ kocon: "200", docType: "estimate" }), { version: 20 });
+  assert.deepEqual(await loadData({ kocon: "200", docType: "estimate" }), { version: 20 });
 
   const restoredWindow = { addEventListener() {}, confirm: () => true, sessionStorage };
   restoredWindow.window = restoredWindow;
