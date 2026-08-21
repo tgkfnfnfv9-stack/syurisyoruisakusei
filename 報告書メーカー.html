@@ -847,7 +847,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260821-13"></script>
+<script src="google-drive.js?v=20260821-14"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1030,6 +1030,9 @@ function validateReportState(state){ if(!state||typeof state!=="object"||Array.i
   for(const key of ["parts","customs","lodges","work","workers","activeWorkers"]){ if(key in state&&!Array.isArray(state[key]))throw new Error(key+" の形式が正しくありません。"); }
   for(const key of ["parts","customs","lodges","work"]){ if(Array.isArray(state[key])&&state[key].some(item=>!item||typeof item!=="object"||Array.isArray(item)))throw new Error(key+" の項目形式が正しくありません。"); }
   if(state.work.some(row=>"people" in row&&(!Array.isArray(row.people)||row.people.some(person=>!person||typeof person!=="object"||Array.isArray(person)))))throw new Error("作業者データの形式が正しくありません。");
+  for(const key of ["workers","activeWorkers"]){ if(Array.isArray(state[key])&&state[key].some(worker=>typeof worker!=="string"))throw new Error(key+" の要素形式が正しくありません。"); }
+  const workStringKeys=["id","date","content","start","end","worker"];
+  if(state.work.some(row=>workStringKeys.some(key=>key in row&&typeof row[key]!=="string")||("holiday" in row&&typeof row.holiday!=="boolean")||("hours" in row&&!["string","number"].includes(typeof row.hours))||(Array.isArray(row.people)&&row.people.some(person=>("worker" in person&&typeof person.worker!=="string")||("hours" in person&&!["string","number"].includes(typeof person.hours))))))throw new Error("作業データ内の値形式が正しくありません。");
   if("directEdits" in state&&(!state.directEdits||typeof state.directEdits!=="object"||Array.isArray(state.directEdits)))throw new Error("直接編集データの形式が正しくありません。");
   if(!isValidSignatureData(state.signature||""))throw new Error("サイン画像の形式または容量が正しくありません。");
   return state;
