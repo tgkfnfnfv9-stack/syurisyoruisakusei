@@ -92,7 +92,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 .note-block{ font-size:9px; line-height:1.55; white-space:pre-wrap; } .note-block .nbt{ font-weight:700; font-size:9.5px; }
 .sum td{ text-align:right; font-weight:700; } .sum .sl{ background:#f0f0f0; }
 .rowdel{ display:inline-block; margin-left:4px; width:16px; height:16px; line-height:14px; text-align:center; border:1px solid #c62828; color:#c62828; background:#fff; border-radius:4px; font-size:12px; cursor:pointer; vertical-align:middle; } .rowdel:hover{ background:#fdecec; }
-[contenteditable]{ outline:none; } .sheet [contenteditable]:hover{ background:#fff8e1; } .sheet [contenteditable]:focus{ background:#fffde7; box-shadow:inset 0 0 0 1px #f0c987; }
+[contenteditable]{ outline:none; white-space:pre-wrap; } .sheet [contenteditable]:hover{ background:#fff8e1; } .sheet [contenteditable]:focus{ background:#fffde7; box-shadow:inset 0 0 0 1px #f0c987; }
 @media print{ @page{ size:A4 landscape; margin:5mm; } body{ background:#fff; } .app{ display:block; height:auto; } .form, .bar{ display:none !important; } .preview{ padding:0; overflow:visible; } .sheet{ width:100%; min-height:auto; box-shadow:none; padding:0; } #sheetExtra .sheet{ page-break-before:always; margin:0; } .rowdel{ display:none !important; } .sheet [contenteditable]:hover,.sheet [contenteditable]:focus{ background:transparent; box-shadow:none; } }
 @media (max-width:900px){ .app{ grid-template-columns:1fr; height:auto; } .preview{ overflow-x:auto; } }
 /* 報告書 */
@@ -847,7 +847,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260730-8"></script>
+<script src="google-drive.js?v=20260821-9"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -923,7 +923,7 @@ async function autoCalc(p){ const st=$(p+"_status"),key=$("apiKey").value.trim()
   st.textContent="取得中…";st.className="status";$(p+"_auto").disabled=true;
   try{ const r=await googleRoute(origin,dest,key); $(p+"_km").value=r.km.toFixed(1);$(p+"_h").value=r.h.toFixed(1);$(p+"_toll").value=Math.round(r.toll);
     st.innerHTML=`片道約${r.km.toFixed(1)}km／約${r.h.toFixed(1)}h／高速${r.hasToll?yen(r.toll):"なし"}（片道）。`;st.className="status ok";
-    scheduleLivePreview(); if(driveAutosaveController)driveAutosaveController.markDirty();
+    scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty();
   }catch(e){ st.innerHTML="自動取得に失敗（"+esc(e.message)+"）。下のリンクで手入力を。";st.className="status err"; } finally{$(p+"_auto").disabled=false;} }
 function openMap(p,kind){ const o=originAddr(p),d=$("address").value.trim(); if(!o){alert("出発地の住所を入力してください。");return;} if(!d){alert("作業場所の住所を入力してください。");return;}
   const u=kind==="yahoo"?`https://map.yahoo.co.jp/route/car?from=${encodeURIComponent(o)}&to=${encodeURIComponent(d)}`:`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&travelmode=driving`; window.open(u,"_blank"); }
@@ -997,8 +997,31 @@ function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt
   if($("subCell")){$("subCell").textContent=num(sub);$("taxCell").textContent=num(tax);$("totalCell").textContent=num(total);$("topTotal").textContent=yen(total);} }
 function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); }
 
+let _reportDirectEdits={};
+function reportEditableText(el){ return el&&typeof el.innerText==="string"?el.innerText:(el&&el.textContent)||""; }
+function assignReportEditKeys(){ const pages=[$("sheet"),...(($("sheetExtra")&&[...$("sheetExtra").querySelectorAll(".sheet")])||[])].filter(Boolean);
+  pages.forEach((page,pageIndex)=>page.querySelectorAll("[contenteditable]").forEach((el,index)=>{el.dataset.editKey=`page:${pageIndex}:edit:${index}`;})); }
+function captureReportDirectEdits(){ const sheet=$("sheet"); if(!sheet||sheet.querySelector(".empty"))return {..._reportDirectEdits}; assignReportEditKeys();
+  const edits={..._reportDirectEdits}; document.querySelectorAll("#sheet [data-edit-key],#sheetExtra [data-edit-key]").forEach(el=>{edits[el.dataset.editKey]=reportEditableText(el);}); _reportDirectEdits=edits; return {...edits}; }
+function restoreReportDirectEdits(){ document.querySelectorAll("#sheet [data-edit-key],#sheetExtra [data-edit-key]").forEach(el=>{const key=el.dataset.editKey;if(Object.prototype.hasOwnProperty.call(_reportDirectEdits,key))el.textContent=_reportDirectEdits[key];}); }
+function migrateLegacyReportEdits(state){ if(state&&state.directEdits&&typeof state.directEdits==="object")return {...state.directEdits};
+  if(!state||typeof state.sheetHTML!=="string")return {};
+  try{ const doc=new DOMParser().parseFromString(state.sheetHTML,"text/html"),edits={}; [...doc.querySelectorAll("[contenteditable]")].forEach((el,index)=>{edits[`page:0:edit:${index}`]=el.textContent||"";}); return edits; }catch(_){ return {}; }
+}
+function validateReportState(state){ if(!state||typeof state!=="object"||Array.isArray(state))throw new Error("報告書データの形式ではありません。");
+  const type=state.documentType||state._kkmtDocumentType||""; if(type&&type!=="report")throw new Error(type==="kkmt-customer-signature"?"サイン専用データです。サイン画面の「サイン入力」から読み込んでください。":"別の種類の書類データです。");
+  if(state.type==="kkmt-customer-signature")throw new Error("サイン専用データです。サイン画面の「サイン入力」から読み込んでください。");
+  if(!state.fields||typeof state.fields!=="object"||!Array.isArray(state.work))throw new Error("報告書データの必須項目がありません。");
+  return state;
+}
+function validateImportedEstimate(state){ if(!state||typeof state!=="object"||Array.isArray(state))throw new Error("見積データの形式ではありません。");
+  const type=state.documentType||state._kkmtDocumentType||""; if(type&&type!=="estimate")throw new Error("見積データではありません。");
+  if(!state.fields||typeof state.fields!=="object"||!Array.isArray(state.wdays))throw new Error("見積データの必須項目がありません。"); return state;
+}
+function normalizeWorkRows(rows){ return (Array.isArray(rows)?rows:[]).map(row=>({...row,people:Array.isArray(row.people)?row.people:(row.worker?[{worker:row.worker,hours:row.hours||""}]:[])})); }
+function syncSameState(copyValues=true){ const same=$("sameAsSite").checked; $("siteWrap").style.display=same?"none":"block"; if(same&&copyValues){ $("siteName").value=$("billName").value; $("address").value=$("billAddr").value; $("siteTel").value=$("billTel").value; } }
 const SIMPLE_IDS=["client","subject","workDate","address","directUse","d_km","d_h","d_toll","d_trans","d_trav","d_ktoll","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_we","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_we","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_we","b3_tripsWe","daysWd","workWE","daysWe","hoursPerDay","nightHours","workFee","nightsWd","lodgeWE","nightsWe","lodgeUnit","lodgePeople","lodgePeopleWd","lodgePeopleWe","repDate","mMaker","mType","mNo","mYear","mKocon","billTel","billPerson","billName","billAddr","siteName","siteTel","sameAsSite","trouble","cause","action","custSupply","payDate","doneComplete","doneIncomplete"];
-function collectState(){ const s={fields:{},parts:partRowsRaw(),customs:customRowsRaw(),lodges:lodgeRows(),work:getWorkRows(),workers:WORKERS,activeWorkers:ACTIVE.slice(),signature:sigDataURL}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); const sh=$("sheet"); if(sh&&!sh.querySelector(".empty"))s.sheetHTML=sh.innerHTML; return s; }
+function collectState(){ const s={documentType:"report",schemaVersion:2,fields:{},parts:partRowsRaw(),customs:customRowsRaw(),lodges:lodgeRows(),work:getWorkRows(),workers:WORKERS,activeWorkers:ACTIVE.slice(),signature:sigDataURL,directEdits:captureReportDirectEdits()}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); return s; }
 function fileBaseName(){ const kocon=(($("mKocon")&&$("mKocon").value)||"").trim();
   const company=($("billName").value.trim()||$("client").value.trim()||"作業報告書");
   return [...[kocon,company].filter(Boolean),"報告書"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
@@ -1011,22 +1034,24 @@ async function saveState(){ const s=collectState(); const name=fileBaseName()+".
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>{ try{ window.open(url,"_blank"); }catch(e){} setTimeout(()=>URL.revokeObjectURL(url),60000); },800); }
-function applyState(s){ if(!s)return; const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; let wk=Array.isArray(s.workers)?s.workers.slice():[]; (s.work||[]).forEach(w=>{ (w.people||(w.worker?[{worker:w.worker}]:[])).forEach(p=>{ if(p.worker&&!wk.includes(p.worker))wk.push(p.worker); }); }); WORKERS=wk; saveWorkers();
-  ACTIVE = (Array.isArray(s.activeWorkers)&&s.activeWorkers.length) ? s.activeWorkers.filter(w=>WORKERS.includes(w)) : [...new Set((s.work||[]).flatMap(w=>(w.people||[]).map(p=>p.worker)).filter(Boolean))];
-  renderWorkerPick();
+function applyState(raw){ if(!raw)return; const s=validateReportState(raw); clearTimeout(_livePreviewT); const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo;
+  const workRows=normalizeWorkRows(s.work); const incomingWorkers=Array.isArray(s.workers)?s.workers:[]; const workWorkers=workRows.flatMap(w=>w.people.map(p=>p.worker).filter(Boolean));
+  WORKERS=[...new Set([...DEFAULT_WORKERS,...WORKERS,...incomingWorkers,...workWorkers])]; saveWorkers();
+  ACTIVE = (Array.isArray(s.activeWorkers)&&s.activeWorkers.length) ? s.activeWorkers.filter(w=>WORKERS.includes(w)) : [...new Set(workWorkers)];
+  renderWorkerPick(); _reportDirectEdits=migrateLegacyReportEdits(s);
   Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("lodgeList").innerHTML=""; const _lr=lodgesFromState(s); (_lr.length?_lr:[null]).forEach(l=>addLodgeRow(l)); refreshLodge();
-  $("workRows").innerHTML=""; (s.work&&s.work.length?s.work:[null]).forEach(w=>addWorkRow(w));
+  $("workRows").innerHTML=""; (workRows.length?workRows:[null]).forEach(w=>addWorkRow(w));
   sigDataURL=s.signature||""; if(mainPad)mainPad.draw(sigDataURL); updateSigState();
-  syncWE(); syncBase(); refreshDirect(); renderReport(); if(s.sheetHTML){ const sh=$("sheet"); if(sh)sh.innerHTML=s.sheetHTML; } }
+  syncSameState(false); syncWE(); syncBase(); refreshDirect(); renderReport(false); }
 
 /* ===== 自動保存（下書き）：APIキー(kkmt_gkey)・作業者リスト(kkmt_workers)は別枠なので消えない ===== */
 const DRAFT_KEY="kkmt_report_draft";
 let _autosaveT=null;
-function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){} },400); }
-function autosaveFromEvent(event){ const id=event&&event.target&&event.target.id; if(id==="mKocon"||id==="subject")return; autosave(); }
+function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } },400); }
+function autosaveFromEvent(event){ const target=event&&event.target; if(target&&target.type==="file")return; autosave(); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
 function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
@@ -1084,13 +1109,13 @@ async function importEstimateFromDrive(){
 }
 
 /* 見積データ（御見積書メーカーのJSON）を取り込む。§1/2/4/5/6はそのまま、§3の作業内容→§8の作業行に変換 */
-function importEstimate(s,silent){ if(!s||!s.fields){if(!silent)alert("見積データ（.json）ではないようです。");return false;}
+function importEstimate(raw,silent){ let s; try{s=validateImportedEstimate(raw);}catch(error){if(!silent)alert(error.message);return false;}
   const f=s.fields; const work=[];
   const pushDay=(people,hours,night,holiday)=>{ people=Math.max(0,parseNum(people)||0); const hrs=(parseNum(hours)||0)+(parseNum(night)||0); const ppl=[]; for(let i=0;i<people;i++)ppl.push({worker:"",hours:hrs?String(hrs):""}); if(!ppl.length)ppl.push({}); work.push({date:"",content:"作業",start:"",end:"",holiday:!!holiday,people:ppl}); };
   if(Array.isArray(s.wdays)&&s.wdays.length){ s.wdays.forEach(r=>pushDay(r.people,r.hours,r.night,r.holiday)); }
   else { const mk=(people,days,h,night,holiday)=>{ days=Math.max(0,parseNum(days)||0); for(let d=0;d<days;d++)pushDay(people,h,night,holiday); };
     mk(f.wkdPeople,f.daysWd,f.hoursWd,f.nightWd,false); mk(f.wkePeople,f.daysWe,f.hoursWe,f.nightWe,true); }
-  applyState({ fields:f, parts:s.parts||[], customs:s.customs||[], lodges:s.lodges||lodgesFromState(s), work, workers:[] });
+  applyState({ documentType:"report",schemaVersion:2,fields:f,parts:s.parts||[],customs:s.customs||[],lodges:s.lodges||lodgesFromState(s),work,workers:WORKERS,activeWorkers:ACTIVE });
   if(!silent)alert("見積データを取り込みました。§8の作業者名は空欄なので、必要に応じて選んでください。");
   return true; }
 
@@ -1123,7 +1148,7 @@ function getWorkRows(){ return [...document.querySelectorAll("#workRows .wrow")]
   people:[...r.querySelectorAll(".ph")].map(p=>({worker:p.dataset.worker,hours:p.value})).filter(p=>p.worker)
 })); }
 
-const HOLIDAYS=new Set(["2025-07-21","2025-08-01","2025-08-11","2025-08-12","2025-08-13","2025-08-14","2025-08-15","2025-09-02","2025-09-15","2025-09-23","2025-10-13","2025-11-03","2025-11-24","2025-12-29","2025-12-30","2025-12-31","2026-01-01","2026-01-02","2026-01-03","2026-01-12","2026-02-11","2026-02-23","2026-03-20","2026-04-29","2026-05-04","2026-05-05","2026-05-06"]);
+const HOLIDAYS=new Set(["2025-07-21","2025-08-01","2025-08-11","2025-08-12","2025-08-13","2025-08-14","2025-08-15","2025-09-02","2025-09-15","2025-09-23","2025-10-13","2025-11-03","2025-11-24","2025-12-29","2025-12-30","2025-12-31","2026-01-01","2026-01-02","2026-01-03","2026-01-12","2026-02-11","2026-02-23","2026-03-20","2026-04-29","2026-05-04","2026-05-05","2026-05-06","2026-07-20","2026-08-11","2026-09-21","2026-09-22","2026-09-23","2026-10-12","2026-11-03","2026-11-23"]);
 function isWorkWE(dstr){ if(!dstr)return false; const p=String(dstr).split("-"); if(p.length<3)return false; const d=new Date(+p[0],+p[1]-1,+p[2]); const g=d.getDay(); return g===0||g===6||HOLIDAYS.has(dstr); }
 function dayWorkFee(h){ if(h<=0)return 0; if(h<=3)return 45000; if(h<=8)return 45000+(h-3)*9000; return 90000+(h-8)*12150; }
 function workFeeFromRows(){ let t=0; getWorkRows().forEach(r=>{ const we=isWorkWE(r.date)||r.holiday; (r.people||[]).forEach(p=>{ const h=parseNum(p.hours); if(h>0){ let f=dayWorkFee(h); if(we)f*=1.5; t+=f; } }); }); return Math.round(t); }
@@ -1155,7 +1180,7 @@ function computeCosts(){
   return { workFee,partsTotal,transport:Math.round(transport),travel:Math.round(travel),toll:Math.round(toll),lodging:Math.round(lodging),otherTotal,parts,customs,reportTotal,dT,dV,dK,dL };
 }
 function detailHTML(arr){ return (arr&&arr.length?arr:[["",0]]).map(([t,v])=>`<div class="detail-line"><span>（ ${esc(t)} ）</span><span>合計 ${num(v)}</span></div>`).join(""); }
-function renderReport(){
+function renderReport(preserveDirectEdits=true){ if(preserveDirectEdits)captureReportDirectEdits();
   const C=computeCosts(); const W=getWorkRows();
   let totH=0; W.forEach(w=>(w.people||[]).forEach(p=>totH+=parseNum(p.hours)));
   const rows=W.slice(); while(rows.length<7) rows.push({});
@@ -1216,11 +1241,13 @@ function renderReport(){
       </table>
     </div>
   </div>`;
-  document.querySelectorAll("#sheet .rc").forEach(c=>c.addEventListener("input",recalcReport));
-  renderOverflow(); fitAllCells();
+  renderOverflow(); assignReportEditKeys(); restoreReportDirectEdits();
+  document.querySelectorAll("#sheet .rc,#sheetExtra .rc").forEach(c=>c.addEventListener("input",recalcReport));
+  fitAllCells();
 }
 let _livePreviewT=null;
-function scheduleLivePreview(){ clearTimeout(_livePreviewT); _livePreviewT=setTimeout(renderReport,300); }
+function scheduleLivePreview(event){ if(event&&event.target&&event.target.type==="file")return; clearTimeout(_livePreviewT); _livePreviewT=setTimeout(renderReport,300); }
+function flushReportPreview(){ clearTimeout(_livePreviewT); renderReport(); }
 
 /* 8日目以降・5人目以降を「作業表のみ」の続きページに送る（費用・合計は1枚目のみ） */
 function renderOverflow(){ const ex=$("sheetExtra"); if(!ex)return; ex.innerHTML="";
@@ -1320,9 +1347,9 @@ async function exportSignatureJson(){ if(!ssDraftSignature){ alert("先にお客
   const url=URL.createObjectURL(blob),a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function importSignatureJson(data){ ssDraftSignature=signatureFromJson(data); if(ssPad)ssPad.draw(ssDraftSignature); }
-function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png"); updateSigState(); scheduleLivePreview(); if(driveAutosaveController)driveAutosaveController.markDirty();});
+function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png"); updateSigState(); scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty();});
     setTimeout(()=>mainPad.resize(),60); window.addEventListener("resize",()=>{ if(mainPad){mainPad.resize(); if(sigDataURL)mainPad.draw(sigDataURL);} }); }
-  const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear(); sigDataURL=""; updateSigState(); scheduleLivePreview(); });
+  const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear(); sigDataURL=""; updateSigState(); scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); });
   updateSigState(); }
 function openSignScreen(){
   $("ssClient").textContent=($("billName").value||$("client").value).trim(); $("ssSubject").textContent=$("subject").value.trim();
@@ -1332,7 +1359,7 @@ function openSignScreen(){
 function closeSignScreen(save){ if(save){ sigDataURL=ssDraftSignature;
     $("trouble").value=$("ssTrouble").value; $("cause").value=$("ssCause").value; $("action").value=$("ssAction").value;
     $("doneComplete").checked=$("ssComplete").classList.contains("on"); $("doneIncomplete").checked=$("ssIncomplete").classList.contains("on");
-    if(mainPad)mainPad.draw(sigDataURL); updateSigState(); renderReport(); }
+    if(mainPad)mainPad.draw(sigDataURL); updateSigState(); renderReport(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); }
   $("signScreen").classList.remove("show"); }
 
 document.addEventListener("DOMContentLoaded",()=>{
@@ -1341,20 +1368,19 @@ document.addEventListener("DOMContentLoaded",()=>{
   const t=new Date(); $("workDate").value=`${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,"0")}-${String(t.getDate()).padStart(2,"0")}`;
   recomputeWorkFee();
   try{ const k=localStorage.getItem("kkmt_gkey"); if(k)$("apiKey").value=k; }catch{}
-  function syncSame(){ const same=$("sameAsSite").checked; $("siteWrap").style.display=same?"none":"block"; if(same){ $("siteName").value=$("billName").value; $("address").value=$("billAddr").value; $("siteTel").value=$("billTel").value; } }
-  $("sameAsSite").addEventListener("change",syncSame);
-  ["billName","billAddr","billTel"].forEach(id=>$(id).addEventListener("input",()=>{ if($("sameAsSite").checked)syncSame(); }));
-  syncSame();
+  $("sameAsSite").addEventListener("change",()=>syncSameState(true));
+  ["billName","billAddr","billTel"].forEach(id=>$(id).addEventListener("input",()=>{ if($("sameAsSite").checked)syncSameState(true); }));
+  syncSameState(true);
   $("apiKey").addEventListener("change",()=>{ try{localStorage.setItem("kkmt_gkey",$("apiKey").value.trim());}catch{} });
   $("saveBtn").addEventListener("click",saveState); $("loadBtn").addEventListener("click",()=>$("loadFile").click());
   $("estBtn").addEventListener("click",()=>$("estFile").click());
-  $("estFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのは見積データ（.json）です。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=()=>{ try{importEstimate(JSON.parse(rd.result)); if(driveAutosaveController)driveAutosaveController.adoptCurrentKocon({confirmed:true});}catch(err){alert("取り込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
-  $("loadFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのはデータ（.json）ファイルです。PDFは読み込めません。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=()=>{ try{applyState(JSON.parse(rd.result)); if(driveAutosaveController)driveAutosaveController.adoptCurrentKocon({confirmed:true});}catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
+  $("estFile").addEventListener("change",e=>{ e.stopPropagation(); clearTimeout(_livePreviewT); const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのは見積データ（.json）です。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=()=>{ try{ const estimate=validateImportedEstimate(JSON.parse(rd.result)); if(importEstimate(estimate,true)){ autosave(); if(driveAutosaveController){driveAutosaveController.adoptCurrentKocon({confirmed:true,save:false});driveAutosaveController.setStatus("端末の見積データを取り込みました。共通Driveは上書きしていません。","ok");} } }catch(err){alert("取り込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
+  $("loadFile").addEventListener("change",e=>{ e.stopPropagation(); clearTimeout(_livePreviewT); const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのは報告書データ（.json）です。PDFは読み込めません。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=()=>{ try{ const report=validateReportState(JSON.parse(rd.result)); applyState(report); autosave(); if(driveAutosaveController){driveAutosaveController.adoptCurrentKocon({confirmed:true,save:false});driveAutosaveController.setStatus("端末の報告書データを読み込みました。共通Driveは上書きしていません。","ok");} }catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   document.querySelectorAll(".we-toggle").forEach(cb=>cb.addEventListener("change",syncWE));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow());
   async function buildReportPdf(){
-    if($("sheet").querySelector(".empty")) renderReport();
+    flushReportPreview();
     fitAllCells();
     if(!(window.html2canvas && window.jspdf)){ alert("PDF部品の読み込みに失敗しました。ページを開き直してください。"); return null; }
     const {jsPDF}=window.jspdf;
@@ -1374,7 +1400,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     return {blob,name,file:new File([blob],name,{type:"application/pdf"})};
   }
   function buildStateFile(){
-    const s=collectState(); const name=fileBaseName()+".json";
+    flushReportPreview(); const s=collectState(); const name=fileBaseName()+".json";
     const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});
     return {blob,name,file:new File([blob],name,{type:"application/json"})};
   }
@@ -1416,7 +1442,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       downloadBlob(json.blob,json.name,false);
     }catch(e){ console.error(e); alert("データの保存に失敗しました。もう一度お試しください。"); }
   }
-  function doPrint(){ if($("sheet").querySelector(".empty")) renderReport(); fitAllCells(); setTimeout(()=>window.print(),80); }
+  function doPrint(){ flushReportPreview(); fitAllCells(); setTimeout(()=>window.print(),80); }
   $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth);
   $("pdfBtn").addEventListener("click",exportPDF); $("dataBtn").addEventListener("click",saveDataOnly);
   let IS_PC=false;
@@ -1455,7 +1481,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   ["d_km","d_h","d_toll"].forEach(id=>$(id).addEventListener("input",syncDirectAmounts));
   ["d_trans","d_trav","d_ktoll"].forEach(id=>$(id).addEventListener("input",()=>{ const el=$(id); el.dataset.edited=el.value.trim()===""?"":"1"; }));
   syncWE(); syncBase(); refreshDirect();
-  restoreDraft();
+  const restoredDraft=restoreDraft();
   if($("sheet").querySelector(".empty"))renderReport();
   const liveForm=document.querySelector(".form");
   liveForm.addEventListener("input",scheduleLivePreview);
@@ -1470,13 +1496,15 @@ document.addEventListener("DOMContentLoaded",()=>{
     statusElement:$("driveStatus"),
     connectButton:$("driveConnectBtn"),
     collectState,
-    onKoconConfirmed:autoLoadReportFromDrive
+    onKoconConfirmed:autoLoadReportFromDrive,
+    skipInitialLoad:restoredDraft
   });
   driveAutosaveController.init();
   $("driveSearchReportBtn").addEventListener("click",searchReportFromDrive);
   $("driveImportEstimateBtn").addEventListener("click",importEstimateFromDrive);
   const _app=document.querySelector(".app");
   _app.addEventListener("input",autosaveFromEvent); _app.addEventListener("change",autosaveFromEvent);
+  _app.addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&(liveMutationIds.has(b.id)||b.matches(".del,.pdel,.addPerson,#ssOk,#sigClear")))setTimeout(autosave,0); });
   $("resetAllBtn").addEventListener("click",resetAll);
 });
 </script>
