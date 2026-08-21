@@ -243,10 +243,12 @@ function saveDocument_(request) {
       if (byPreviousSubject && !byPreviousSubject.kocon) existing = byPreviousSubject;
     }
     const expectedRevisionValue = Number(request.expectedRevision);
-    const expectedRevision = Number.isSafeInteger(expectedRevisionValue) && expectedRevisionValue >= 0
-      ? expectedRevisionValue
-      : documentRevision_(request.data);
+    const hasExpectedRevision = request.expectedRevision != null ||
+      !!(request.data && typeof request.data === "object" && Object.prototype.hasOwnProperty.call(request.data, "_kkmtRevision"));
     const existingRevision = existing ? documentRevision_(existing.data) : 0;
+    const expectedRevision = hasExpectedRevision
+      ? (Number.isSafeInteger(expectedRevisionValue) && expectedRevisionValue >= 0 ? expectedRevisionValue : documentRevision_(request.data))
+      : existingRevision;
     if ((existing && existingRevision !== expectedRevision) || (!existing && expectedRevision !== 0)) {
       throw new Error("CONFLICT: 他の端末で更新されています。最新データを読み込んでください。");
     }
