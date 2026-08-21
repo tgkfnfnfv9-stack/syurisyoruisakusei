@@ -1001,32 +1001,52 @@ let _reportDirectEdits={};
 let _reportLegacyMigration=false;
 function reportEditableText(el){ return el&&typeof el.innerText==="string"?el.innerText:(el&&el.textContent)||""; }
 function assignReportEditKeys(){ const pages=[$("sheet"),...(($("sheetExtra")&&[...$("sheetExtra").querySelectorAll(".sheet")])||[])].filter(Boolean);
-  pages.forEach((page,pageIndex)=>page.querySelectorAll("[contenteditable]").forEach((el,index)=>{ const key=`page:${pageIndex}:edit:${index}`; el.dataset.editKey=key; el.dataset.generatedValue=reportEditableText(el);
-    el.addEventListener("input",()=>{ const value=reportEditableText(el); if(value===el.dataset.generatedValue)delete _reportDirectEdits[key]; else _reportDirectEdits[key]=value; autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); });
-  })); }
+  pages.forEach((page,pageIndex)=>{ const pageKey=page.dataset.pageKey||("page:"+pageIndex),workIds=String(page.dataset.workIds||"").split(","),workerKey=page.dataset.workerKey||"";
+    const workRows=[...page.querySelectorAll(".wb")];
+    page.querySelectorAll("[contenteditable]").forEach((el,index)=>{ const workRow=el.closest(".wb"); let key;
+      if(workRow){ const rowIndex=workRows.indexOf(workRow),workId=workIds[rowIndex]||("empty:"+pageKey+":"+rowIndex),cellIndex=[...workRow.querySelectorAll("[contenteditable]")].indexOf(el); key="work:"+workId+":workers:"+workerKey+":cell:"+cellIndex; }
+      else key=pageKey+":static:"+[...page.querySelectorAll("[contenteditable]:not(.wb [contenteditable])")].indexOf(el);
+      el.dataset.editKey=key; el.dataset.legacyEditKey="page:"+pageIndex+":edit:"+index; el.dataset.generatedValue=reportEditableText(el);
+      el.addEventListener("input",()=>{ const value=reportEditableText(el); if(value===el.dataset.generatedValue)delete _reportDirectEdits[key]; else _reportDirectEdits[key]=value; autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); });
+    });
+  }); }
 function captureReportDirectEdits(){ return {..._reportDirectEdits}; }
-function restoreReportDirectEdits(){ document.querySelectorAll("#sheet [data-edit-key],#sheetExtra [data-edit-key]").forEach(el=>{const key=el.dataset.editKey;if(!Object.prototype.hasOwnProperty.call(_reportDirectEdits,key))return;
-    if(_reportLegacyMigration&&_reportDirectEdits[key]===reportEditableText(el)){delete _reportDirectEdits[key];return;} el.textContent=_reportDirectEdits[key];});
-  _reportLegacyMigration=false;
+function restoreReportDirectEdits(){ document.querySelectorAll("#sheet [data-edit-key],#sheetExtra [data-edit-key]").forEach(el=>{ const key=el.dataset.editKey,legacyKey=el.dataset.legacyEditKey;
+    const sourceKey=Object.prototype.hasOwnProperty.call(_reportDirectEdits,key)?key:(_reportLegacyMigration&&Object.prototype.hasOwnProperty.call(_reportDirectEdits,legacyKey)?legacyKey:""); if(!sourceKey)return;
+    const value=_reportDirectEdits[sourceKey]; if(_reportLegacyMigration&&value===reportEditableText(el)){delete _reportDirectEdits[sourceKey];return;}
+    el.textContent=value; if(sourceKey!==key){_reportDirectEdits[key]=value;delete _reportDirectEdits[sourceKey];}
+  }); _reportLegacyMigration=false;
 }
+function legacyEditableText(el){ const clone=el.cloneNode(true); clone.querySelectorAll("br").forEach(br=>br.replaceWith("\n")); return clone.textContent||""; }
 function migrateLegacyReportEdits(state){ if(state&&state.directEdits&&typeof state.directEdits==="object"){_reportLegacyMigration=false;return {...state.directEdits};}
   if(!state||typeof state.sheetHTML!=="string"){_reportLegacyMigration=false;return {};}
-  try{ const doc=new DOMParser().parseFromString(state.sheetHTML,"text/html"),edits={}; [...doc.querySelectorAll("[contenteditable]")].forEach((el,index)=>{edits[`page:0:edit:${index}`]=el.textContent||"";}); _reportLegacyMigration=true; return edits; }catch(_){_reportLegacyMigration=false;return {}; }
+  try{ const doc=new DOMParser().parseFromString(state.sheetHTML,"text/html"),edits={}; [...doc.querySelectorAll("[contenteditable]")].forEach((el,index)=>{edits[`page:0:edit:${index}`]=legacyEditableText(el);}); _reportLegacyMigration=true; return edits; }catch(_){_reportLegacyMigration=false;return {}; }
 }
+function isValidSignatureData(value){ return value===""||(typeof value==="string"&&value.length<=5000000&&/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=\r\n]+$/.test(value)); }
 function validateReportState(state){ if(!state||typeof state!=="object"||Array.isArray(state))throw new Error("報告書データの形式ではありません。");
   const type=state.documentType||state._kkmtDocumentType||""; if(type&&type!=="report")throw new Error(type==="kkmt-customer-signature"?"サイン専用データです。サイン画面の「サイン入力」から読み込んでください。":"別の種類の書類データです。");
   if(state.type==="kkmt-customer-signature")throw new Error("サイン専用データです。サイン画面の「サイン入力」から読み込んでください。");
-  if(!state.fields||typeof state.fields!=="object"||!Array.isArray(state.work))throw new Error("報告書データの必須項目がありません。");
+  if(!state.fields||typeof state.fields!=="object"||Array.isArray(state.fields)||!Array.isArray(state.work))throw new Error("報告書データの必須項目がありません。");
+  for(const key of ["parts","customs","lodges","work","workers","activeWorkers"]){ if(key in state&&!Array.isArray(state[key]))throw new Error(key+" の形式が正しくありません。"); }
+  for(const key of ["parts","customs","lodges","work"]){ if(Array.isArray(state[key])&&state[key].some(item=>!item||typeof item!=="object"||Array.isArray(item)))throw new Error(key+" の項目形式が正しくありません。"); }
+  if(state.work.some(row=>"people" in row&&(!Array.isArray(row.people)||row.people.some(person=>!person||typeof person!=="object"||Array.isArray(person)))))throw new Error("作業者データの形式が正しくありません。");
+  if("directEdits" in state&&(!state.directEdits||typeof state.directEdits!=="object"||Array.isArray(state.directEdits)))throw new Error("直接編集データの形式が正しくありません。");
+  if(!isValidSignatureData(state.signature||""))throw new Error("サイン画像の形式または容量が正しくありません。");
   return state;
 }
 function validateImportedEstimate(state){ if(!state||typeof state!=="object"||Array.isArray(state))throw new Error("見積データの形式ではありません。");
   const type=state.documentType||state._kkmtDocumentType||""; if(type&&type!=="estimate")throw new Error("見積データではありません。");
-  if(!state.fields||typeof state.fields!=="object"||!Array.isArray(state.wdays))throw new Error("見積データの必須項目がありません。"); return state;
+  if(!state.fields||typeof state.fields!=="object"||Array.isArray(state.fields))throw new Error("見積データの必須項目がありません。");
+  for(const key of ["parts","customs","lodges","wdays"]){ if(key in state&&!Array.isArray(state[key]))throw new Error(key+" の形式が正しくありません。"); }
+  for(const key of ["parts","customs","lodges","wdays"]){ if(Array.isArray(state[key])&&state[key].some(item=>!item||typeof item!=="object"||Array.isArray(item)))throw new Error(key+" の項目形式が正しくありません。"); }
+  if(!Array.isArray(state.wdays))state.wdays=[]; return state;
 }
-function normalizeWorkRows(rows){ return (Array.isArray(rows)?rows:[]).map(row=>({...row,people:Array.isArray(row.people)?row.people:(row.worker?[{worker:row.worker,hours:row.hours||""}]:[])})); }
+function normalizeWorkRows(rows){ return (Array.isArray(rows)?rows:[]).map(row=>({...row,id:row.id||newReportRowId(),people:Array.isArray(row.people)?row.people:(row.worker?[{worker:row.worker,hours:row.hours||""}]:[])})); }
+function newReportRowId(){ return "work_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,10); }
 function syncSameState(copyValues=true){ const same=$("sameAsSite").checked; $("siteWrap").style.display=same?"none":"block"; if(same&&copyValues){ $("siteName").value=$("billName").value; $("address").value=$("billAddr").value; $("siteTel").value=$("billTel").value; } }
 const SIMPLE_IDS=["client","subject","workDate","address","directUse","d_km","d_h","d_toll","d_trans","d_trav","d_ktoll","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_we","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_we","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_we","b3_tripsWe","daysWd","workWE","daysWe","hoursPerDay","nightHours","workFee","nightsWd","lodgeWE","nightsWe","lodgeUnit","lodgePeople","lodgePeopleWd","lodgePeopleWe","repDate","mMaker","mType","mNo","mYear","mKocon","billTel","billPerson","billName","billAddr","siteName","siteTel","sameAsSite","trouble","cause","action","custSupply","payDate","doneComplete","doneIncomplete"];
-function collectState(){ const s={documentType:"report",schemaVersion:2,fields:{},parts:partRowsRaw(),customs:customRowsRaw(),lodges:lodgeRows(),work:getWorkRows(),workers:WORKERS,activeWorkers:ACTIVE.slice(),signature:sigDataURL,directEdits:captureReportDirectEdits()}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); return s; }
+let _documentRevision=0;
+function collectState(){ const s={documentType:"report",schemaVersion:2,_kkmtRevision:_documentRevision,fields:{},parts:partRowsRaw(),customs:customRowsRaw(),lodges:lodgeRows(),work:getWorkRows(),workers:WORKERS,activeWorkers:ACTIVE.slice(),signature:sigDataURL,directEdits:captureReportDirectEdits()}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); return s; }
 function fileBaseName(){ const kocon=(($("mKocon")&&$("mKocon").value)||"").trim();
   const company=($("billName").value.trim()||$("client").value.trim()||"作業報告書");
   return [...[kocon,company].filter(Boolean),"報告書"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
@@ -1039,7 +1059,7 @@ async function saveState(){ const s=collectState(); const name=fileBaseName()+".
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>{ try{ window.open(url,"_blank"); }catch(e){} setTimeout(()=>URL.revokeObjectURL(url),60000); },800); }
-function applyState(raw){ if(!raw)return; const s=validateReportState(raw); clearTimeout(_livePreviewT); const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo;
+function applyState(raw){ if(!raw)return; const s=validateReportState(raw); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo;
   const workRows=normalizeWorkRows(s.work); const incomingWorkers=Array.isArray(s.workers)?s.workers:[]; const workWorkers=workRows.flatMap(w=>w.people.map(p=>p.worker).filter(Boolean));
   WORKERS=[...new Set([...DEFAULT_WORKERS,...WORKERS,...incomingWorkers,...workWorkers])]; saveWorkers();
   ACTIVE = (Array.isArray(s.activeWorkers)&&s.activeWorkers.length) ? s.activeWorkers.filter(w=>WORKERS.includes(w)) : [...new Set(workWorkers)];
@@ -1049,13 +1069,15 @@ function applyState(raw){ if(!raw)return; const s=validateReportState(raw); clea
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("lodgeList").innerHTML=""; const _lr=lodgesFromState(s); (_lr.length?_lr:[null]).forEach(l=>addLodgeRow(l)); refreshLodge();
   $("workRows").innerHTML=""; (workRows.length?workRows:[null]).forEach(w=>addWorkRow(w));
-  sigDataURL=s.signature||""; if(mainPad)mainPad.draw(sigDataURL); updateSigState();
+  sigDataURL=isValidSignatureData(s.signature||"")?(s.signature||""):""; if(mainPad)mainPad.draw(sigDataURL); updateSigState();
   syncSameState(false); syncWE(); syncBase(); refreshDirect(); renderReport(false); }
 
 /* ===== 自動保存（下書き）：APIキー(kkmt_gkey)・作業者リスト(kkmt_workers)は別枠なので消えない ===== */
 const DRAFT_KEY="kkmt_report_draft";
 let _autosaveT=null;
-function autosave(){ clearTimeout(_autosaveT); _autosaveT=setTimeout(()=>{ try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } },400); }
+function writeLocalDraftNow(){ clearTimeout(_autosaveT); _autosaveT=null; try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } }
+function cancelLocalAutosave(){ clearTimeout(_autosaveT); _autosaveT=null; }
+function autosave(){ cancelLocalAutosave(); _autosaveT=setTimeout(writeLocalDraftNow,400); }
 function autosaveFromEvent(event){ const target=event&&event.target; if(target&&target.type==="file")return; autosave(); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
 function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
@@ -1087,11 +1109,11 @@ async function autoLoadReportFromDrive({kocon,isConnected,setStatus}){
   if(!isConnected)return false;
   setStatus(`高コン「${kocon}」の報告書を自動取得中…`);
   const report=await KKMTDrive.loadJson({kocon,docType:"report"});
-  if(!report){ setStatus(`新しい報告書です。入力内容を報告書ファイルへ自動保存します。`,"ok"); return true; }
+  if(!report){ _documentRevision=0; setStatus(`新しい報告書です。入力内容を報告書ファイルへ自動保存します。`,"ok"); return {confirmed:true,revision:0}; }
   applyState(report);
   $("mKocon").value=kocon;
   setStatus("報告書を自動取得しました。","ok");
-  return true;
+  return {confirmed:true,revision:_documentRevision};
 }
 
 async function importEstimateFromDrive(){
@@ -1141,20 +1163,35 @@ function renderRowHours(row){ const box=row.querySelector(".whours"); if(!box)re
   box.querySelectorAll(".ph").forEach(inp=>{ if(prev[inp.dataset.worker]!=null)inp.value=prev[inp.dataset.worker]; }); }
 function addWorker(name){ name=(name||"").trim(); if(!name||WORKERS.includes(name))return; WORKERS.push(name); saveWorkers(); if(!ACTIVE.includes(name))ACTIVE.push(name); renderWorkerPick(); document.querySelectorAll("#workRows .wrow").forEach(renderRowHours); }
 function hoursFromTimes(s,e){ if(!s||!e)return null; const a=s.split(":").map(Number),b=e.split(":").map(Number); let d=(b[0]*60+b[1])-(a[0]*60+a[1]); if(d<0)d+=1440; return Math.round(d/60*10)/10; }
-function addWorkRow(v){ const row=$("workRow").content.cloneNode(true).querySelector(".wrow"); const st=row.querySelector(".wStart"),en=row.querySelector(".wEnd");
+function addWorkRow(v){ const row=$("workRow").content.cloneNode(true).querySelector(".wrow"); row.dataset.workId=(v&&v.id)||newReportRowId(); const st=row.querySelector(".wStart"),en=row.querySelector(".wEnd");
   row.querySelector(".del").addEventListener("click",()=>row.remove());
   if(v){ row.querySelector(".wDate").value=v.date||""; row.querySelector(".wContent").value=v.content||""; st.value=v.start||""; en.value=v.end||""; row.querySelector(".wHol").checked=!!v.holiday; }
   $("workRows").appendChild(row);
   renderRowHours(row);
   if(v&&v.people&&v.people.length){ const map={}; v.people.forEach(p=>{ if(p.worker)map[p.worker]=p.hours; }); row.querySelectorAll(".ph").forEach(inp=>{ if(map[inp.dataset.worker]!=null)inp.value=map[inp.dataset.worker]||""; }); } }
 function getWorkRows(){ return [...document.querySelectorAll("#workRows .wrow")].map(r=>({
-  date:r.querySelector(".wDate").value, content:r.querySelector(".wContent").value,
+  id:r.dataset.workId||newReportRowId(),date:r.querySelector(".wDate").value, content:r.querySelector(".wContent").value,
   start:r.querySelector(".wStart").value, end:r.querySelector(".wEnd").value, holiday:r.querySelector(".wHol").checked,
   people:[...r.querySelectorAll(".ph")].map(p=>({worker:p.dataset.worker,hours:p.value})).filter(p=>p.worker)
 })); }
 
-const HOLIDAYS=new Set(["2025-07-21","2025-08-01","2025-08-11","2025-08-12","2025-08-13","2025-08-14","2025-08-15","2025-09-02","2025-09-15","2025-09-23","2025-10-13","2025-11-03","2025-11-24","2025-12-29","2025-12-30","2025-12-31","2026-01-01","2026-01-02","2026-01-03","2026-01-12","2026-02-11","2026-02-23","2026-03-20","2026-04-29","2026-05-04","2026-05-05","2026-05-06","2026-07-20","2026-08-11","2026-09-21","2026-09-22","2026-09-23","2026-10-12","2026-11-03","2026-11-23"]);
-function isWorkWE(dstr){ if(!dstr)return false; const p=String(dstr).split("-"); if(p.length<3)return false; const d=new Date(+p[0],+p[1]-1,+p[2]); const g=d.getDay(); return g===0||g===6||HOLIDAYS.has(dstr); }
+const COMPANY_HOLIDAYS=new Set(["2025-08-01","2025-08-12","2025-08-13","2025-08-14","2025-08-15","2025-09-02","2025-12-29","2025-12-30","2025-12-31","2026-01-02","2026-01-03"]);
+function nthMonday(year,month,n){ const first=new Date(year,month-1,1),offset=(8-first.getDay())%7; return 1+offset+(n-1)*7; }
+function baseNationalHoliday(date){ const y=date.getFullYear(),m=date.getMonth()+1,d=date.getDate();
+  const vernal=Math.floor(20.8431+0.242194*(y-1980)-Math.floor((y-1980)/4));
+  const autumn=Math.floor(23.2488+0.242194*(y-1980)-Math.floor((y-1980)/4));
+  return (m===1&&(d===1||d===nthMonday(y,1,2)))||(m===2&&(d===11||(y>=2020&&d===23)))||(m===3&&d===vernal)||
+    (m===4&&d===29)||(m===5&&[3,4,5].includes(d))||(m===7&&d===nthMonday(y,7,3))||(m===8&&d===11)||
+    (m===9&&(d===nthMonday(y,9,3)||d===autumn))||(m===10&&d===nthMonday(y,10,2))||(m===11&&[3,23].includes(d));
+}
+function isNationalHoliday(date){ if(baseNationalHoliday(date))return true;
+  const prev=new Date(date);prev.setDate(prev.getDate()-1);const next=new Date(date);next.setDate(next.getDate()+1);
+  if(baseNationalHoliday(prev)&&baseNationalHoliday(next))return true;
+  let cursor=new Date(prev),sawSunday=false;
+  while(baseNationalHoliday(cursor)){ if(cursor.getDay()===0)sawSunday=true; cursor.setDate(cursor.getDate()-1); }
+  return sawSunday;
+}
+function isWorkWE(dstr){ if(!dstr)return false; const p=String(dstr).split("-"); if(p.length<3)return false; const d=new Date(+p[0],+p[1]-1,+p[2]); const g=d.getDay(); return g===0||g===6||COMPANY_HOLIDAYS.has(dstr)||isNationalHoliday(d); }
 function dayWorkFee(h){ if(h<=0)return 0; if(h<=3)return 45000; if(h<=8)return 45000+(h-3)*9000; return 90000+(h-8)*12150; }
 function workFeeFromRows(){ let t=0; getWorkRows().forEach(r=>{ const we=isWorkWE(r.date)||r.holiday; (r.people||[]).forEach(p=>{ const h=parseNum(p.hours); if(h>0){ let f=dayWorkFee(h); if(we)f*=1.5; t+=f; } }); }); return Math.round(t); }
 function computeCosts(){
@@ -1189,7 +1226,7 @@ function renderReport(preserveDirectEdits=true){ if(preserveDirectEdits)captureR
   const C=computeCosts(); const W=getWorkRows();
   let totH=0; W.forEach(w=>(w.people||[]).forEach(p=>totH+=parseNum(p.hours)));
   const rows=W.slice(); while(rows.length<7) rows.push({});
-  const cb=on=>on?"☑":"☐"; const sig=sigDataURL?`<img src="${sigDataURL}">`:""; const addr=esc($("address").value.trim());
+  const cb=on=>on?"☑":"☐"; const sig=isValidSignatureData(sigDataURL)?(sigDataURL?`<img src="${esc(sigDataURL)}">`:""):""; const addr=esc($("address").value.trim());
   const z=v=>v>0?num(v):"";
   const dow=(d,hol)=>{ if(!d)return hol?"祝":""; const p=String(d).split("-"); if(p.length<3)return ""; const x=new Date(+p[0],+p[1]-1,+p[2]); if(isNaN(x))return ""; const w="日月火水木金土"[x.getDay()]; return hol?w+"祝":w; };
   const workers=[...new Set(W.flatMap(w=>(w.people||[]).map(p=>p.worker)).filter(Boolean))].slice(0,4); while(workers.length<4)workers.push("");
@@ -1208,7 +1245,7 @@ function renderReport(preserveDirectEdits=true){ if(preserveDirectEdits)captureR
     const cc= lab?`<td class="lbl" colspan="4">${lab}</td><td class="num rc" colspan="8" contenteditable>${z(val)}</td>`:`<td colspan="4"></td><td colspan="8"></td>`;
     body+=`<tr class="wb"><td class="ctr">${dow(w.date,w.holiday)}</td><td colspan="3" class="ctr" contenteditable>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" contenteditable>${esc(w.content||"")}</td><td colspan="7" class="ctr" contenteditable>${range}</td>${wh}<td colspan="3" class="ctr" contenteditable>${rowH>0?num(rowH):""}</td>${cc}</tr>`;
   }
-  $("sheet").className="sheet rp";
+  $("sheet").className="sheet rp"; $("sheet").dataset.pageKey="main"; $("sheet").dataset.workIds=rows.map(row=>row.id||"").join(","); $("sheet").dataset.workerKey=workers.filter(Boolean).join(",");
   $("sheet").innerHTML=`
   <div class="titlecell">作 業 報 告 書</div>
   <table class="rep submrow"><tr><td class="lft">＜報告書提出日：<span contenteditable>${$("repDate").value?fmtDate($("repDate").value):"　　月　　日"}</span></td></tr></table>
@@ -1264,7 +1301,8 @@ function renderOverflow(){ const ex=$("sheetExtra"); if(!ex)return; ex.innerHTML
   ex.innerHTML=html;
 }
 function workTableSheet(days, wk){
-  const w4=(wk||[]).slice(0,4); while(w4.length<4)w4.push("");
+  const sourceDays=(days||[]).slice(),sourceWorkers=(wk||[]).slice(); const pageKey="overflow:"+encodeURIComponent(sourceDays.map(row=>row.id||"").join(","))+":"+encodeURIComponent(sourceWorkers.join(","));
+  const w4=sourceWorkers.slice(0,4); while(w4.length<4)w4.push("");
   const colg45="<colgroup>"+"<col>".repeat(45)+"</colgroup>";
   const costLab=["部品費","交通費","移動時間費","高速代","宿泊費","その他費用",""];
   const wkdow=(d,hol)=>{ if(!d)return hol?"祝":""; const p=String(d).split("-"); if(p.length<3)return ""; const x=new Date(+p[0],+p[1]-1,+p[2]); if(isNaN(x))return ""; const wd="日月火水木金土"[x.getDay()]; return hol?wd+"祝":wd; };
@@ -1279,7 +1317,7 @@ function workTableSheet(days, wk){
     const cc= lab?`<td class="lbl" colspan="4">${lab}</td><td class="num rc" colspan="8" contenteditable></td>`:`<td colspan="4"></td><td colspan="8"></td>`;
     body+=`<tr class="wb"><td class="ctr">${wkdow(w.date,w.holiday)}</td><td colspan="3" class="ctr" contenteditable>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" contenteditable>${esc(w.content||"")}</td><td colspan="7" class="ctr" contenteditable>${range}</td>${wh}<td colspan="3" class="ctr" contenteditable>${rowH>0?num(rowH):""}</td>${cc}</tr>`;
   }
-  return `<div class="sheet rp cont">
+  return `<div class="sheet rp cont" data-page-key="${esc(pageKey)}" data-work-ids="${esc(sourceDays.map(row=>row.id||"").join(","))}" data-worker-key="${esc(sourceWorkers.join(","))}">
   <div class="titlecell">作 業 報 告 書</div>
   <table class="rep submrow"><tr><td class="lft">＜報告書提出日：<span contenteditable></span></td></tr></table>
   <div class="cols">
@@ -1342,7 +1380,7 @@ function signatureJsonPayload(signature){ return {
   client:($("billName").value||$("client").value||"").trim(),subject:$("subject").value.trim(),signature
 }; }
 function signatureFromJson(data){ const signature=data&&data.signature;
-  if(typeof signature!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,/.test(signature))throw new Error("サイン画像が入ったJSONではありません。");
+  if(!isValidSignatureData(signature)||!signature)throw new Error("サイン画像が入ったJSONではないか、容量が大きすぎます。");
   return signature;
 }
 async function exportSignatureJson(){ if(!ssDraftSignature){ alert("先にお客様のサインを記入してください。"); return; }
@@ -1384,8 +1422,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   document.querySelectorAll(".we-toggle").forEach(cb=>cb.addEventListener("change",syncWE));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow());
-  async function buildReportPdf(){
-    flushReportPreview();
+  async function buildReportPdf(flush=true){
+    if(flush)flushReportPreview();
     fitAllCells();
     if(!(window.html2canvas && window.jspdf)){ alert("PDF部品の読み込みに失敗しました。ページを開き直してください。"); return null; }
     const {jsPDF}=window.jspdf;
@@ -1404,10 +1442,15 @@ document.addEventListener("DOMContentLoaded",()=>{
     const blob=pdf.output("blob");
     return {blob,name,file:new File([blob],name,{type:"application/pdf"})};
   }
-  function buildStateFile(){
-    flushReportPreview(); const s=collectState(); const name=fileBaseName()+".json";
+  function buildStateFile(state=null,flush=true){
+    if(flush)flushReportPreview(); const s=state||collectState(); const name=fileBaseName()+".json";
     const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});
     return {blob,name,file:new File([blob],name,{type:"application/json"})};
+  }
+  async function buildOutputPair(){
+    const app=document.querySelector(".app"); const oldPointer=app.style.pointerEvents; const oldInert=app.inert;
+    try{ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); flushReportPreview(); const snapshot=collectState(); app.style.pointerEvents="none"; app.inert=true; const pdf=await buildReportPdf(false); if(!pdf)return null; return {pdf,json:buildStateFile(snapshot,false)}; }
+    finally{ app.inert=oldInert; app.style.pointerEvents=oldPointer; }
   }
   function downloadBlob(blob,name,openTab){
     const url=URL.createObjectURL(blob);
@@ -1425,12 +1468,10 @@ document.addEventListener("DOMContentLoaded",()=>{
   }
   async function saveBoth(){
     try{
-      if(IS_PC && window.showDirectoryPicker){
-        let dir=null; try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }catch(err){ if(err&&err.name==="AbortError")return; dir=null; }
-        if(dir){ const pdf=await buildReportPdf(); if(!pdf)return; const json=buildStateFile();
-          try{ for(const f of [json,pdf]){ const fh=await dir.getFileHandle(f.name,{create:true}); const w=await fh.createWritable(); await w.write(f.blob); await w.close(); } return; }catch(err){ console.error(err); } } }
-      const pdf=await buildReportPdf(); if(!pdf)return;
-      const json=buildStateFile();
+      let dir=null;
+      if(IS_PC && window.showDirectoryPicker){ try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }catch(err){ if(err&&err.name==="AbortError")return; dir=null; } }
+      const pair=await buildOutputPair(); if(!pair)return; const {pdf,json}=pair;
+      if(dir){ try{ for(const f of [json,pdf]){ const fh=await dir.getFileHandle(f.name,{create:true}); const w=await fh.createWritable(); await w.write(f.blob); await w.close(); } return; }catch(err){ console.error(err); } }
       if(!IS_PC && navigator.canShare && navigator.canShare({files:[pdf.file,json.file]})){
         try{ await navigator.share({files:[pdf.file,json.file],title:"報告書PDF＋データ"}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
       }
@@ -1502,6 +1543,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     connectButton:$("driveConnectBtn"),
     collectState,
     onKoconConfirmed:autoLoadReportFromDrive,
+    onIdentityChanging:cancelLocalAutosave,
+    onIdentityChanged:writeLocalDraftNow,
+    onSavedRevision:revision=>{ _documentRevision=revision; },
     skipInitialLoad:restoredDraft
   });
   driveAutosaveController.init();
