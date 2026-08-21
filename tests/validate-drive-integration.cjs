@@ -29,7 +29,7 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
   assert.doesNotMatch(html, /accounts\.google\.com\/gsi\/client/);
-  assert.match(html, /<script src="google-drive\.js\?v=20260730-8"><\/script>/);
+  assert.match(html, /<script src="google-drive\.js\?v=20260821-9"><\/script>/);
 }
 
 new vm.Script(drive, { filename: "google-drive.js" });
@@ -76,8 +76,8 @@ assert.doesNotMatch(estimate, /id="genBtn"/);
 assert.doesNotMatch(report, /id="genBtn"/);
 assert.doesNotMatch(estimateApp, /\$\("genBtn"\)\.addEventListener/);
 assert.doesNotMatch(reportApp, /\$\("genBtn"\)\.addEventListener/);
-assert.match(estimateApp, /function scheduleLivePreview\(\)/);
-assert.match(reportApp, /function scheduleLivePreview\(\)/);
+assert.match(estimateApp, /function scheduleLivePreview\(event\)/);
+assert.match(reportApp, /function scheduleLivePreview\(event\)/);
 assert.match(estimateApp, /liveForm\.addEventListener\("input",scheduleLivePreview\)/);
 assert.match(reportApp, /liveForm\.addEventListener\("input",scheduleLivePreview\)/);
 assert.match(reportApp, /replace\(\/\\n\/g,"<br>"\)/);
@@ -109,7 +109,7 @@ assert.doesNotMatch(estimateDriveCard[0], /id="driveLoginBtn"/);
 assert.doesNotMatch(reportDriveCard[0], /id="driveLoginBtn"/);
 assert.doesNotMatch(estimate, /\.drive-card\{\s*border-color:/);
 assert.doesNotMatch(report, /\.drive-card\{\s*border-color:/);
-assert.match(estimateApp, /<div class="k">見積番号<\/div><div class="v" contenteditable>\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
+assert.match(estimateApp, /<div class="k">見積番号<\/div><div class="v">\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
 assert.match(reportApp, /<div class="k">見積番号<\/div><div class="v" contenteditable>\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
 assert.match(estimateApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fields\.estNo/);
 assert.match(reportApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fields\.estNo/);
@@ -117,19 +117,35 @@ assert.match(estimateApp, /const kocon=\(\$\("mKocon"\)\.value\|\|""\)\.trim\(\)
 assert.match(reportApp, /loadJson\(\{kocon,docType:"estimate"\}\)/);
 assert.match(drive, /adoptCurrentKocon\(\{ confirmed = false, save = true \} = \{\}\)/);
 assert.match(drive, /confirmCurrentKocon\(\{ save = true \} = \{\}\)/);
-assert.match(drive, /confirmCurrentKocon\(\{ save: false \}\)/);
-assert.match(drive, /if \(save && isConnected\(\)\) await markDirty\(\{ immediate: true \}\)/);
+assert.match(drive, /confirmCurrentKocon\(\{ save: true \}\)/);
+assert.match(drive, /if \(save\) await markDirty\(\{ immediate: true \}\)/);
 assert.match(drive, /isKoconTarget\(target\) \|\| isFallbackTarget\(target\) \|\| isSearchTarget\(target\)/);
 assert.match(drive, /root\.addEventListener\("input"/);
-assert.match(estimateApp, /function autosaveFromEvent\(event\)\{ const id=event&&event\.target&&event\.target\.id; if\(id==="mKocon"\|\|id==="subject"\)return; autosave\(\); \}/);
-assert.match(reportApp, /function autosaveFromEvent\(event\)\{ const id=event&&event\.target&&event\.target\.id; if\(id==="mKocon"\|\|id==="subject"\)return; autosave\(\); \}/);
+assert.match(estimateApp, /function autosaveFromEvent\(event\)\{ const target=event&&event\.target; if\(target&&target\.type==="file"\)return; autosave\(\); \}/);
+assert.match(reportApp, /function autosaveFromEvent\(event\)\{ const target=event&&event\.target; if\(target&&target\.type==="file"\)return; autosave\(\); \}/);
 assert.match(estimateApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
 assert.match(reportApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
-assert.match(estimate, /google-drive\.js\?v=20260730-8/);
-assert.match(report, /google-drive\.js\?v=20260730-8/);
+assert.match(estimate, /google-drive\.js\?v=20260821-9/);
+assert.match(report, /google-drive\.js\?v=20260821-9/);
 
 const sectionSeven = report.match(/<h2><span class="n">7<\/span>[\s\S]*?<\/section>/);
 assert.ok(sectionSeven, "report section 7 must exist");
 assert.doesNotMatch(sectionSeven[0], /id="mKocon"/);
+
+
+assert.match(estimateApp, /documentType:"estimate",schemaVersion:2/);
+assert.match(reportApp, /documentType:"report",schemaVersion:2/);
+assert.match(estimateApp, /validateEstimateState\(JSON\.parse\(rd\.result\)\)/);
+assert.match(reportApp, /validateReportState\(JSON\.parse\(rd\.result\)\)/);
+assert.match(reportApp, /type==="kkmt-customer-signature"/);
+assert.match(estimateApp, /adoptCurrentKocon\(\{confirmed:true,save:false\}\)/);
+assert.match(reportApp, /adoptCurrentKocon\(\{confirmed:true,save:false\}\)/);
+assert.doesNotMatch(estimateApp, /sh\.innerHTML=s\.sheetHTML/);
+assert.doesNotMatch(reportApp, /sh\.innerHTML=s\.sheetHTML/);
+assert.match(estimateApp, /notesByKey/);
+assert.match(reportApp, /data-edit-key/);
+assert.match(drive, /const candidateKocon = normalizeKocon/);
+assert.match(drive, /koconInput\.value = previous;\s+await markDirty\(\{ immediate: true \}\);\s+koconInput\.value = next;/);
+assert.match(drive, /fallbackInput\.addEventListener\("input", \(\) => markDirty\(\)\)/);
 
 console.log("Google Drive integration checks passed.");
