@@ -196,9 +196,10 @@ function findDocument_(docType, kocon, subject) {
     return byKocon || null;
   }
   if (normalizedSubject) {
-    return documents.find(function (document) {
+    const matches = documents.filter(function (document) {
       return document.subject === normalizedSubject;
-    }) || null;
+    });
+    return matches.find(function (document) { return !document.kocon; }) || matches[0] || null;
   }
   return null;
 }
