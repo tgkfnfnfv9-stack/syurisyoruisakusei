@@ -127,11 +127,20 @@ function getDocumentFolder_(docType) {
   );
 }
 
-function stampDocument_(data, docType) {
+function documentRevision_(data) {
+  const value = Number(data && data._kkmtRevision);
+  return Number.isSafeInteger(value) && value >= 0 ? value : 0;
+}
+
+function stampDocument_(data, docType, revision) {
   const stamped = data && typeof data === "object" && !Array.isArray(data)
     ? Object.assign({}, data)
     : { value: data };
   stamped._kkmtDocumentType = requireDocType_(docType);
+  if (revision != null) {
+    stamped._kkmtRevision = revision;
+    stamped._kkmtUpdatedAt = new Date().toISOString();
+  }
   return stamped;
 }
 
@@ -227,13 +236,22 @@ function saveDocument_(request) {
       : findDocument_(docType, "", subject);
     if (!existing && subject) {
       const bySubject = findDocument_(docType, "", subject);
-      if (!kocon || (bySubject && !bySubject.kocon)) existing = bySubject;
+      if (bySubject && !bySubject.kocon) existing = bySubject;
     }
     if (!existing && previousSubject && previousSubject !== subject) {
       const byPreviousSubject = findDocument_(docType, "", previousSubject);
-      if (!kocon || (byPreviousSubject && !byPreviousSubject.kocon)) existing = byPreviousSubject;
+      if (byPreviousSubject && !byPreviousSubject.kocon) existing = byPreviousSubject;
     }
-    const stamped = stampDocument_(request.data, docType);
+    const expectedRevisionValue = Number(request.expectedRevision);
+    const expectedRevision = Number.isSafeInteger(expectedRevisionValue) && expectedRevisionValue >= 0
+      ? expectedRevisionValue
+      : documentRevision_(request.data);
+    const existingRevision = existing ? documentRevision_(existing.data) : 0;
+    if ((existing && existingRevision !== expectedRevision) || (!existing && expectedRevision !== 0)) {
+      throw new Error("CONFLICT: 他の端末で更新されています。最新データを読み込んでください。");
+    }
+    const nextRevision = expectedRevision + 1;
+    const stamped = stampDocument_(request.data, docType, nextRevision);
     const json = JSON.stringify(stamped, null, 2);
     const name = documentName_(kocon, subject, docType);
     let file;
@@ -247,7 +265,8 @@ function saveDocument_(request) {
     return {
       id: file.getId(),
       name: file.getName(),
-      updatedAt: new Date().toISOString()
+      revision: nextRevision,
+      updatedAt: stamped._kkmtUpdatedAt
     };
   } finally {
     lock.releaseLock();
