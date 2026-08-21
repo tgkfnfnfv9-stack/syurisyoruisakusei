@@ -85,7 +85,12 @@ async function centralFetch(url, options = {}) {
     if (byPreviousSubject && !byPreviousSubject.kocon) existing = byPreviousSubject;
   }
   const existingRevision = Number(existing && existing.data && existing.data._kkmtRevision) || 0;
-  const expectedRevision = request.expectedRevision == null ? existingRevision : request.expectedRevision;
+  const hasExpectedRevision = request.expectedRevision != null ||
+    !!(request.data && Object.prototype.hasOwnProperty.call(request.data, "_kkmtRevision"));
+  if (!hasExpectedRevision && existingRevision > 0) return { type: "opaque" };
+  const expectedRevision = hasExpectedRevision
+    ? (request.expectedRevision == null ? Number(request.data._kkmtRevision) || 0 : request.expectedRevision)
+    : 0;
   if ((existing && expectedRevision !== existingRevision) || (!existing && expectedRevision !== 0)) {
     return { type: "opaque" };
   }
@@ -103,15 +108,17 @@ async function centralFetch(url, options = {}) {
   return { type: "opaque" };
 }
 
+const localValues = new Map();
+const localStorage = {
+  get length() { return localValues.size; },
+  key: index => [...localValues.keys()][index] ?? null,
+  getItem: key => localValues.has(key) ? localValues.get(key) : null,
+  setItem: (key, value) => localValues.set(key, String(value)),
+  removeItem: key => localValues.delete(key)
+};
 const context = {
   window,
-  localStorage: {
-    length: 0,
-    key: () => null,
-    getItem: () => null,
-    setItem() {},
-    removeItem() {}
-  },
+  localStorage,
   fetch: centralFetch,
   Headers,
   URLSearchParams,
@@ -146,7 +153,7 @@ vm.runInNewContext(
   assert.equal(drive.isConnected(), true);
   await drive.connect();
 
-  await drive.saveJson({
+  let estimateSave = await drive.saveJson({
     subject: "高コン未定案件",
     docType: "estimate",
     data: { fields: { subject: "高コン未定案件" }, version: 1 }
@@ -157,17 +164,33 @@ vm.runInNewContext(
     { fields: { subject: "高コン未定案件" }, version: 1 }
   );
 
-  await drive.saveJson({
+  estimateSave = await drive.saveJson({
     kocon: "888",
     subject: "高コン未定案件",
     docType: "estimate",
-    data: { fields: { mKocon: "888", subject: "高コン未定案件" }, version: 2 }
+    expectedRevision: estimateSave.revision,
+    data: { fields: { mKocon: "888", subject: "高コン未定案件" }, version: 2, _kkmtRevision: estimateSave.revision }
   });
   assert.equal(records.length, 1);
   assert.equal(records[0].kocon, "888");
   assert.deepEqual(
     await loadData({ kocon: "888", docType: "estimate" }),
     { fields: { mKocon: "888", subject: "高コン未定案件" }, version: 2 }
+  );
+  await assert.rejects(
+    () => drive.saveJson({
+      kocon: "888", subject: "高コン未定案件", docType: "estimate",
+      data: { fields: { mKocon: "888", subject: "高コン未定案件" }, version: 999 }
+    }),
+    /他の端末で更新/
+  );
+  await assert.rejects(
+    () => drive.saveJson({
+      kocon: "888", subject: "高コン未定案件", docType: "estimate",
+      expectedRevision: estimateSave.revision,
+      data: { _kkmtRevision: estimateSave.revision }
+    }),
+    /必須項目/
   );
 
   await drive.saveJson({
@@ -183,30 +206,136 @@ vm.runInNewContext(
   );
   assert.equal(window.google, undefined, "central mode must not require Google OAuth library");
 
-  await drive.saveJson({ kocon: "same-a", subject: "同一件名", docType: "estimate", data: { wdays: [], version: 71 } });
-  await drive.saveJson({ kocon: "same-b", subject: "同一件名", docType: "estimate", data: { wdays: [], version: 72 } });
+  await drive.saveJson({ kocon: "same-a", subject: "同一件名", docType: "estimate", data: { fields: { mKocon: "same-a", subject: "同一件名" }, wdays: [], version: 71 } });
+  await drive.saveJson({ kocon: "same-b", subject: "同一件名", docType: "estimate", data: { fields: { mKocon: "same-b", subject: "同一件名" }, wdays: [], version: 72 } });
   assert.equal(records.filter(record => record.docType === "estimate" && record.subject === "同一件名").length, 2);
-  assert.deepEqual(await loadData({ kocon: "same-a", docType: "estimate" }), { wdays: [], version: 71 });
-  assert.deepEqual(await loadData({ kocon: "same-b", docType: "estimate" }), { wdays: [], version: 72 });
-  await drive.saveJson({ subject: "同一件名", docType: "estimate", data: { wdays: [], version: 73 } });
+  assert.deepEqual(await loadData({ kocon: "same-a", docType: "estimate" }), { fields: { mKocon: "same-a", subject: "同一件名" }, wdays: [], version: 71 });
+  assert.deepEqual(await loadData({ kocon: "same-b", docType: "estimate" }), { fields: { mKocon: "same-b", subject: "同一件名" }, wdays: [], version: 72 });
+  await drive.saveJson({ subject: "同一件名", docType: "estimate", data: { fields: { mKocon: "", subject: "同一件名" }, wdays: [], version: 73 } });
   assert.equal(records.filter(record => record.docType === "estimate" && record.subject === "同一件名").length, 3);
-  assert.deepEqual(await loadData({ kocon: "same-b", docType: "estimate" }), { wdays: [], version: 72 });
+  assert.deepEqual(await loadData({ kocon: "same-b", docType: "estimate" }), { fields: { mKocon: "same-b", subject: "同一件名" }, wdays: [], version: 72 });
 
   const base = await drive.loadJson({ kocon: "same-a", docType: "estimate" });
   await drive.saveJson({
     kocon: "same-a", subject: "同一件名", docType: "estimate",
     expectedRevision: base._kkmtRevision,
-    data: { wdays: [], version: 74, _kkmtRevision: base._kkmtRevision }
+    data: { fields: { mKocon: "same-a", subject: "同一件名" }, wdays: [], version: 74, _kkmtRevision: base._kkmtRevision }
   });
   await assert.rejects(
     () => drive.saveJson({
       kocon: "same-a", subject: "同一件名", docType: "estimate",
       expectedRevision: base._kkmtRevision,
-      data: { wdays: [], version: 999, _kkmtRevision: base._kkmtRevision }
+      data: { fields: { mKocon: "same-a", subject: "同一件名" }, wdays: [], version: 999, _kkmtRevision: base._kkmtRevision }
     }),
     /他の端末で更新/
   );
-  assert.deepEqual(await loadData({ kocon: "same-a", docType: "estimate" }), { wdays: [], version: 74 });
+  assert.deepEqual(await loadData({ kocon: "same-a", docType: "estimate" }), { fields: { mKocon: "same-a", subject: "同一件名" }, wdays: [], version: 74 });
+
+  const promotionSubject = "画面昇格テスト";
+  await drive.saveJson({
+    subject: promotionSubject,
+    docType: "estimate",
+    data: { documentType: "estimate", fields: { mKocon: "", subject: promotionSubject }, wdays: [] }
+  });
+  let promotionState = await drive.loadJson({ subject: promotionSubject, docType: "estimate" });
+  const koconInput = { value: "", disabled: false };
+  const subjectInput = { value: promotionSubject };
+  const statusElement = { textContent: "", classList: { toggle() {} } };
+  const controller = drive.createAutosaveController({
+    docType: "estimate",
+    rootElement: { addEventListener() {} },
+    koconInput,
+    fallbackInput: subjectInput,
+    statusElement,
+    connectButton: { textContent: "", disabled: false },
+    collectState: () => clone(promotionState),
+    onKoconConfirmed: async ({ kocon }) => {
+      const loaded = await drive.loadJson({ kocon, docType: "estimate" });
+      if (!loaded) return { confirmed: true, revision: promotionState._kkmtRevision, loaded: false };
+      promotionState = loaded;
+      return { confirmed: true, revision: loaded._kkmtRevision, loaded: true };
+    },
+    onSavedRevision: revision => { promotionState._kkmtRevision = revision; }
+  });
+  koconInput.value = "777";
+  promotionState.fields.mKocon = "777";
+  assert.equal(await controller.confirmCurrentKocon({ save: true }), true);
+  const promotedByController = await drive.loadJson({ kocon: "777", docType: "estimate" });
+  assert.equal(promotedByController._kkmtRevision, 2);
+  assert.equal(promotedByController.fields.subject, promotionSubject);
+
+  const makeInput = value => ({ value, disabled: false, type: "text", addEventListener() {} });
+  const makeStatus = () => ({ textContent: "", classList: { toggle() {} } });
+  const makeButton = () => ({ textContent: "", disabled: false, addEventListener() {} });
+  const waitForAsyncInit = () => new Promise(resolve => setTimeout(resolve, 60));
+
+  const pendingKocon = "pending-ok";
+  let pendingRemote = await drive.saveJson({
+    kocon: pendingKocon, subject: "未同期成功", docType: "estimate",
+    data: { fields: { mKocon: pendingKocon, subject: "未同期成功" }, wdays: [], version: 1 }
+  });
+  let pendingState = {
+    documentType: "estimate", _kkmtRevision: pendingRemote.revision,
+    fields: { mKocon: pendingKocon, subject: "未同期成功" }, wdays: [], version: 2
+  };
+  const pendingKey = "kkmt_drive_pending_estimate_k_" + pendingKocon;
+  localStorage.setItem(pendingKey, JSON.stringify({
+    docType: "estimate", kocon: pendingKocon, subject: "未同期成功",
+    expectedRevision: pendingRemote.revision, json: JSON.stringify(pendingState)
+  }));
+  const pendingController = drive.createAutosaveController({
+    docType: "estimate",
+    rootElement: { addEventListener() {} },
+    koconInput: makeInput(pendingKocon),
+    fallbackInput: makeInput("未同期成功"),
+    statusElement: makeStatus(),
+    connectButton: makeButton(),
+    collectState: () => clone(pendingState),
+    onKoconConfirmed: async () => ({ confirmed: true, revision: pendingState._kkmtRevision, loaded: true }),
+    onSavedRevision: revision => { pendingState._kkmtRevision = revision; },
+    skipInitialLoad: true
+  });
+  pendingController.init();
+  await waitForAsyncInit();
+  assert.equal(pendingState._kkmtRevision, pendingRemote.revision + 1);
+  assert.equal(localStorage.getItem(pendingKey), null);
+
+  const conflictKocon = "pending-conflict";
+  const conflictV1 = await drive.saveJson({
+    kocon: conflictKocon, subject: "未同期競合", docType: "estimate",
+    data: { fields: { mKocon: conflictKocon, subject: "未同期競合" }, wdays: [], version: 1 }
+  });
+  await drive.saveJson({
+    kocon: conflictKocon, subject: "未同期競合", docType: "estimate",
+    expectedRevision: conflictV1.revision,
+    data: { fields: { mKocon: conflictKocon, subject: "未同期競合" }, wdays: [], version: 2, _kkmtRevision: conflictV1.revision }
+  });
+  const conflictState = {
+    documentType: "estimate", _kkmtRevision: conflictV1.revision,
+    fields: { mKocon: conflictKocon, subject: "未同期競合" }, wdays: [], version: 99
+  };
+  const conflictKey = "kkmt_drive_pending_estimate_k_" + conflictKocon;
+  localStorage.setItem(conflictKey, JSON.stringify({
+    docType: "estimate", kocon: conflictKocon, subject: "未同期競合",
+    expectedRevision: conflictV1.revision, json: JSON.stringify(conflictState)
+  }));
+  let conflictLoadCalled = false;
+  const conflictStatus = makeStatus();
+  const conflictController = drive.createAutosaveController({
+    docType: "estimate",
+    rootElement: { addEventListener() {} },
+    koconInput: makeInput(conflictKocon),
+    fallbackInput: makeInput("未同期競合"),
+    statusElement: conflictStatus,
+    connectButton: makeButton(),
+    collectState: () => clone(conflictState),
+    onKoconConfirmed: async () => { conflictLoadCalled = true; return true; }
+  });
+  conflictController.init();
+  await waitForAsyncInit();
+  assert.equal(conflictLoadCalled, false);
+  assert.notEqual(localStorage.getItem(conflictKey), null);
+  assert.match(conflictStatus.textContent, /競合/);
 
   console.log("Central Drive client checks passed.");
 })().catch(error => {
