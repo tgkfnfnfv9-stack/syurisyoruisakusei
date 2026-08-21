@@ -847,7 +847,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260821-10"></script>
+<script src="google-drive.js?v=20260821-11"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1109,11 +1109,11 @@ async function autoLoadReportFromDrive({kocon,isConnected,setStatus}){
   if(!isConnected)return false;
   setStatus(`高コン「${kocon}」の報告書を自動取得中…`);
   const report=await KKMTDrive.loadJson({kocon,docType:"report"});
-  if(!report){ _documentRevision=0; setStatus(`新しい報告書です。入力内容を報告書ファイルへ自動保存します。`,"ok"); return {confirmed:true,revision:0}; }
+  if(!report){ _documentRevision=0; setStatus(`新しい報告書です。入力内容を報告書ファイルへ自動保存します。`,"ok"); return {confirmed:true,revision:0,loaded:false}; }
   applyState(report);
   $("mKocon").value=kocon;
   setStatus("報告書を自動取得しました。","ok");
-  return {confirmed:true,revision:_documentRevision};
+  return {confirmed:true,revision:_documentRevision,loaded:true};
 }
 
 async function importEstimateFromDrive(){
@@ -1283,7 +1283,7 @@ function renderReport(preserveDirectEdits=true){ if(preserveDirectEdits)captureR
       </table>
     </div>
   </div>`;
-  renderOverflow(); assignReportEditKeys(); restoreReportDirectEdits();
+  renderOverflow(); assignReportEditKeys(); restoreReportDirectEdits(); recalcReport();
   document.querySelectorAll("#sheet .rc,#sheetExtra .rc").forEach(c=>c.addEventListener("input",recalcReport));
   fitAllCells();
 }
@@ -1301,7 +1301,7 @@ function renderOverflow(){ const ex=$("sheetExtra"); if(!ex)return; ex.innerHTML
   ex.innerHTML=html;
 }
 function workTableSheet(days, wk){
-  const sourceDays=(days||[]).slice(),sourceWorkers=(wk||[]).slice(); const pageKey="overflow:"+encodeURIComponent(sourceDays.map(row=>row.id||"").join(","))+":"+encodeURIComponent(sourceWorkers.join(","));
+  const sourceDays=(days||[]).slice(),sourceWorkers=(wk||[]).slice(); const firstWorkId=(sourceDays.find(row=>row&&row.id)||{}).id||"empty"; const pageKey="overflow:"+encodeURIComponent(firstWorkId)+":"+encodeURIComponent(sourceWorkers.join(","));
   const w4=sourceWorkers.slice(0,4); while(w4.length<4)w4.push("");
   const colg45="<colgroup>"+"<col>".repeat(45)+"</colgroup>";
   const costLab=["部品費","交通費","移動時間費","高速代","宿泊費","その他費用",""];
@@ -1423,6 +1423,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   document.querySelectorAll(".we-toggle").forEach(cb=>cb.addEventListener("change",syncWE));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow());
   async function buildReportPdf(flush=true){
+    if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();
     if(flush)flushReportPreview();
     fitAllCells();
     if(!(window.html2canvas && window.jspdf)){ alert("PDF部品の読み込みに失敗しました。ページを開き直してください。"); return null; }
@@ -1448,6 +1449,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     return {blob,name,file:new File([blob],name,{type:"application/json"})};
   }
   async function buildOutputPair(){
+    if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();
     const app=document.querySelector(".app"); const oldPointer=app.style.pointerEvents; const oldInert=app.inert;
     try{ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); flushReportPreview(); const snapshot=collectState(); app.style.pointerEvents="none"; app.inert=true; const pdf=await buildReportPdf(false); if(!pdf)return null; return {pdf,json:buildStateFile(snapshot,false)}; }
     finally{ app.inert=oldInert; app.style.pointerEvents=oldPointer; }
@@ -1480,7 +1482,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }catch(e){ console.error(e); alert("保存に失敗しました。もう一度お試しください。"); }
   }
   async function saveDataOnly(){
-    try{ const json=buildStateFile();
+    try{ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); const json=buildStateFile();
       if(!IS_PC && navigator.canShare && navigator.canShare({files:[json.file]})){
         try{ await navigator.share({files:[json.file],title:json.name}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
       }
@@ -1488,7 +1490,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       downloadBlob(json.blob,json.name,false);
     }catch(e){ console.error(e); alert("データの保存に失敗しました。もう一度お試しください。"); }
   }
-  function doPrint(){ flushReportPreview(); fitAllCells(); setTimeout(()=>window.print(),80); }
+  async function doPrint(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); flushReportPreview(); fitAllCells(); setTimeout(()=>window.print(),80); }
   $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth);
   $("pdfBtn").addEventListener("click",exportPDF); $("dataBtn").addEventListener("click",saveDataOnly);
   let IS_PC=false;
