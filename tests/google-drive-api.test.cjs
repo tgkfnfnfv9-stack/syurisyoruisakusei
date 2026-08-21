@@ -18,92 +18,7 @@ const sessionStorage = {
   removeItem: key => session.delete(key)
 };
 
-const files = new Map();
-let sequence = 0;
-const jsonResponse = (data, status = 200) => new Response(JSON.stringify(data), {
-  status,
-  headers: { "content-type": "application/json" }
-});
-
-async function driveFetch(url, options = {}) {
-  const parsed = new URL(url);
-  const method = options.method || "GET";
-
-  if (parsed.pathname === "/drive/v3/files" && method === "GET") {
-    const query = parsed.searchParams.get("q") || "";
-    const matches = [];
-    for (const file of files.values()) {
-      if (file.trashed) continue;
-      if (query.includes("application/vnd.google-apps.folder")) {
-        const name = (query.match(/name = '([^']+)'/) || [])[1];
-        const parent = (query.match(/'([^']+)' in parents/) || [])[1];
-        if (file.mimeType.includes("folder") && file.name === name && file.parents.includes(parent)) matches.push(file);
-      } else if (query.includes("appProperties has")) {
-        const properties = Object.fromEntries(
-          [...query.matchAll(/key='([^']+)' and value='([^']+)'/g)]
-            .map(match => [match[1], match[2]])
-        );
-        const parent = (query.match(/'([^']+)' in parents/) || [])[1];
-        if (file.parents.includes(parent) &&
-            Object.entries(properties).every(([key, value]) => file.appProperties?.[key] === value)) {
-          matches.push(file);
-        }
-      }
-    }
-    return jsonResponse({ files: matches });
-  }
-
-  const metadataMatch = parsed.pathname.match(/^\/drive\/v3\/files\/([^/]+)$/);
-  if (metadataMatch && method === "GET" && parsed.searchParams.get("alt") === "media") {
-    const file = files.get(metadataMatch[1]);
-    return file ? jsonResponse(file.data) : jsonResponse({ error: { message: "not found" } }, 404);
-  }
-  if (metadataMatch && method === "GET") {
-    const file = files.get(metadataMatch[1]);
-    return file ? jsonResponse(file) : jsonResponse({ error: { message: "not found" } }, 404);
-  }
-  if (metadataMatch && method === "PATCH") {
-    const file = files.get(metadataMatch[1]);
-    if (!file) return jsonResponse({ error: { message: "not found" } }, 404);
-    Object.assign(file, JSON.parse(options.body));
-    return jsonResponse(file);
-  }
-
-  if (parsed.pathname === "/drive/v3/files" && method === "POST") {
-    const metadata = JSON.parse(options.body);
-    const file = {
-      id: `file-${++sequence}`,
-      name: metadata.name,
-      mimeType: metadata.mimeType,
-      parents: metadata.parents,
-      trashed: false
-    };
-    files.set(file.id, file);
-    return jsonResponse(file);
-  }
-
-  if (parsed.pathname === "/upload/drive/v3/files" && method === "POST") {
-    const multipart = await options.body.text();
-    const parts = multipart.split(/\r\n--[^\r]+/);
-    const metadata = JSON.parse(parts[0].split("\r\n\r\n")[1]);
-    const data = JSON.parse(parts[1].split("\r\n\r\n")[1]);
-    const file = { id: `file-${++sequence}`, ...metadata, trashed: false, data };
-    files.set(file.id, file);
-    return jsonResponse(file);
-  }
-
-  const uploadMatch = parsed.pathname.match(/^\/upload\/drive\/v3\/files\/([^/]+)$/);
-  if (uploadMatch && method === "PATCH") {
-    const file = files.get(uploadMatch[1]);
-    if (!file) return jsonResponse({ error: { message: "not found" } }, 404);
-    file.data = JSON.parse(options.body);
-    return jsonResponse(file);
-  }
-
-  throw new Error(`Unhandled request: ${method} ${url}`);
-}
-
-const window = { addEventListener() {}, confirm: () => true };
+const window = { addEventListener() {}, confirm: () => true, sessionStorage };
 window.window = window;
 window.KKMT_CENTRAL_DRIVE_CONFIG = { url: "" };
 window.google = {
@@ -115,12 +30,11 @@ window.google = {
     }
   }
 };
-window.sessionStorage = sessionStorage;
 
 const context = {
   window,
   localStorage,
-  fetch: driveFetch,
+  fetch: async () => { throw new Error("Direct Drive API writes must not run"); },
   Headers,
   URLSearchParams,
   Blob,
@@ -144,98 +58,22 @@ vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js")
   const drive = window.KKMTDrive;
   await drive.prepare();
   await drive.connect();
-
-  await drive.saveJson({ kocon: "12345", subject: "研磨機修理", docType: "estimate", data: { version: 1 } });
-  await drive.saveJson({ kocon: "12345", subject: "研磨機修理", docType: "estimate", data: { version: 2 } });
-  await drive.saveJson({ kocon: "12345", subject: "作業報告案件", docType: "report", data: { version: 10 } });
-
-  assert.deepEqual(await drive.loadJson({ kocon: "12345", docType: "estimate" }), { version: 2 });
-  assert.deepEqual(await drive.loadJson({ kocon: "12345", docType: "report" }), { version: 10 });
-  assert.deepEqual(await drive.loadJson({ subject: "研磨機修理", docType: "estimate" }), { version: 2 });
-  assert.deepEqual(await drive.loadJson({ subject: "作業報告案件", docType: "report" }), { version: 10 });
-  const reportForLegacySearch = [...files.values()].find(file => file.appProperties?.docType === "report");
-  delete reportForLegacySearch.appProperties.subjectKey;
-  reportForLegacySearch.data = { fields: { subject: "作業報告案件" }, version: 10, _kkmtDocumentType: "report" };
-  assert.deepEqual(await drive.loadJson({ subject: "作業報告案件", docType: "report" }), { fields: { subject: "作業報告案件" }, version: 10 });
-  reportForLegacySearch.appProperties.subjectKey = "作業報告案件";
-
-  const documents = [...files.values()].filter(file => file.appProperties);
-  assert.equal(documents.length, 2);
-  assert.equal(documents.find(file => file.appProperties.docType === "estimate").name, "高コン12345_研磨機修理_見積もり.json");
-  assert.equal(documents.find(file => file.appProperties.docType === "report").name, "高コン12345_報告書.json");
-  assert.equal(documents.find(file => file.appProperties.docType === "estimate").data._kkmtDocumentType, "estimate");
-  assert.equal(documents.find(file => file.appProperties.docType === "report").data._kkmtDocumentType, "report");
-  assert.equal([...files.values()].some(file => file.mimeType.includes("folder") && file.name === "見積もり"), true);
-  assert.equal([...files.values()].some(file => file.mimeType.includes("folder") && file.name === "報告書"), true);
-  await drive.saveJson({ subject: "高コン未定案件", docType: "estimate", data: { version: 30 } });
-  const subjectDraft = [...files.values()].find(file => file.appProperties?.subjectKey === "高コン未定案件");
-  assert.equal(subjectDraft.name, "高コン未定案件_見積もり.json");
-  const subjectDraftId = subjectDraft.id;
-  await drive.saveJson({ kocon: "888", subject: "高コン未定案件", docType: "estimate", data: { version: 31 } });
-  const promotedDraft = [...files.values()].find(file => file.id === subjectDraftId);
-  assert.equal(promotedDraft.name, "高コン888_高コン未定案件_見積もり.json");
-  assert.equal(promotedDraft.appProperties.kocon, "888");
-  assert.deepEqual(await drive.loadJson({ kocon: "888", docType: "estimate" }), { version: 31 });
-  assert.deepEqual(await drive.loadJson({ subject: "高コン未定案件", docType: "estimate" }), { version: 31 });
-  assert.equal([...files.values()].filter(file => file.appProperties?.subjectKey === "高コン未定案件").length, 1);
-  await drive.saveJson({ subject: "変更前件名", docType: "estimate", data: { version: 40 } });
-  const renamedSubjectDraft = [...files.values()].find(file => file.appProperties?.subjectKey === "変更前件名");
-  await drive.saveJson({ subject: "変更後件名", previousSubject: "変更前件名", docType: "estimate", data: { version: 41 } });
-  assert.equal([...files.values()].find(file => file.id === renamedSubjectDraft.id).name, "変更後件名_見積もり.json");
-  assert.equal([...files.values()].filter(file => ["変更前件名","変更後件名"].includes(file.appProperties?.subjectKey)).length, 1);
+  assert.equal(drive.isConnected(), true);
   await assert.rejects(
-    () => drive.saveJson({ kocon: "12345", docType: "other", data: {} }),
-    /不明な書類種別/
-  );
-  await assert.rejects(
-    () => drive.saveJson({ subject: "報告書は高コン必須", docType: "report", data: {} }),
-    /高コンが空欄/
-  );
-  await drive.saveJson({ kocon: "wrong-type", docType: "report", data: { work: [] } });
-  const wrongTypeFile = documents.find(file => file.appProperties.kocon === "wrong-type") ||
-    [...files.values()].find(file => file.appProperties?.kocon === "wrong-type");
-  wrongTypeFile.data = { wdays: [] };
-  await assert.rejects(
-    () => drive.loadJson({ kocon: "wrong-type", docType: "report" }),
-    /別の種類の書類データ/
+    () => drive.saveJson({
+      kocon: "12345",
+      subject: "安全確認",
+      docType: "estimate",
+      expectedRevision: 0,
+      data: { documentType: "estimate", fields: { mKocon: "12345", subject: "安全確認" }, wdays: [] }
+    }),
+    /共通Driveバックエンド経由/
   );
   assert.ok(![...storage.values()].some(value => value.includes("test-access-token")));
   assert.ok([...session.values()].some(value => value.includes("test-access-token")));
-
-  localStorage.setItem("kkmt_drive_pending_estimate_200", JSON.stringify({
-    docType: "estimate",
-    kocon: "200",
-    json: JSON.stringify({ version: 20 }),
-    updatedAt: "2026-07-30T00:00:00.000Z"
-  }));
-  localStorage.setItem("kkmt_drive_pending_report_300", JSON.stringify({
-    docType: "report",
-    kocon: "300",
-    json: JSON.stringify({ version: 30 }),
-    updatedAt: "2026-07-30T00:00:01.000Z"
-  }));
-  const estimateFlush = await drive.flushPending("estimate");
-  assert.equal(estimateFlush.length, 1);
-  assert.equal(localStorage.getItem("kkmt_drive_pending_estimate_200"), null);
-  assert.notEqual(localStorage.getItem("kkmt_drive_pending_report_300"), null);
-  assert.deepEqual(await drive.loadJson({ kocon: "200", docType: "estimate" }), { version: 20 });
-
-  const restoredWindow = { addEventListener() {}, confirm: () => true, sessionStorage };
-  restoredWindow.window = restoredWindow;
-  restoredWindow.KKMT_CENTRAL_DRIVE_CONFIG = { url: "" };
-  restoredWindow.google = window.google;
-  const restoredContext = {
-    ...context,
-    window: restoredWindow
-  };
-  vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js"), "utf8"), restoredContext, {
-    filename: "google-drive-restored.js"
-  });
-  await restoredWindow.KKMTDrive.prepare();
-  assert.equal(restoredWindow.KKMTDrive.isConnected(), true);
-
-  console.log("Google Drive API mock checks passed.");
+  console.log("Direct OAuth write safety check passed.");
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
+
