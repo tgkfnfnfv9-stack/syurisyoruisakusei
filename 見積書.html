@@ -240,11 +240,11 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <button class="btn btn-blue big" id="pdfBtn">PDF保存</button>
         <button class="btn btn-blue big" id="dataBtn">データ保存</button>
       </div></div>
-    <p class="foot">見積書の各欄はクリックで直接修正可（金額を直すと合計も自動再計算）。明細の行番号横「×」で行削除。A4・横推奨。</p>
+    <p class="foot">見積書の備考欄と基本料金一覧行の品名枠はクリックで直接修正可。明細の行番号横「×」で行削除。A4・横推奨。</p>
   </aside>
 
   <main class="preview">
-    <div class="bar"><button class="btn btn-ghost" id="addBlank" style="width:auto;padding:7px 12px;">＋ 明細に空白行を追加</button><span class="tip">各欄はクリックで直接修正できます。</span></div>
+    <div class="bar"><span class="tip">備考欄と基本料金一覧行の品名枠をクリックして直接修正できます。</span></div>
     <div id="sheet" class="sheet"><div class="empty">左の入力内容が<br>ここに自動反映されます</div></div>
   </main>
 </div>
@@ -861,16 +861,14 @@ function fitSheet(){ const sheet=$("sheet"); if(!sheet||sheet.querySelector(".em
   while(sheet.offsetHeight>targetH && fs>5 && guard<40){ fs-=0.5; lh=fs<7?1.3:1.45; note.style.fontSize=fs+"px"; note.style.lineHeight=String(lh); if(nbt)nbt.style.fontSize=(fs+0.5)+"px"; guard++; } }
 function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt").forEach(c=>sub+=parseNum(c.textContent)); const total=taxInclude(sub),tax=total-Math.round(sub);
   if($("subCell")){$("subCell").textContent=num(sub);$("taxCell").textContent=num(tax);$("totalCell").textContent=num(total);$("topTotal").textContent=yen(total);} }
-function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); fitSheet(); }
-
 let _livePreviewT=null;
-function scheduleLivePreview(){ clearTimeout(_livePreviewT); _livePreviewT=setTimeout(renderSheet,250); }
+function scheduleLivePreview(event){ if(event&&event.target&&event.target.id==="loadFile")return; clearTimeout(_livePreviewT); _livePreviewT=setTimeout(renderSheet,250); }
 
 const SIMPLE_IDS=["mKocon","client","subject","workDate","dateType","address","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_tripsWe","workFee","lodgeUnit"];
 function collectState(){ const s={fields:{},parts:partRowsRaw(),customs:customRowsRaw(),wdays:wdayRows(),lodges:lodgeRows()}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); const sh=$("sheet"); if(sh&&!sh.querySelector(".empty"))s.sheetHTML=sh.innerHTML; return s; }
 function saveState(){ const s=collectState(); const name=fileBaseName();
   const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"}); const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download=name+".json"; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000); }
-function applyState(s){ if(!s)return; const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
+function applyState(s){ if(!s)return; clearTimeout(_livePreviewT); const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("wdList").innerHTML=""; (s.wdays&&s.wdays.length?s.wdays:[null]).forEach(w=>addWdayRow(w));
@@ -988,13 +986,12 @@ document.addEventListener("DOMContentLoaded",()=>{
   try{ const k=localStorage.getItem("kkmt_gkey"); if(k)$("apiKey").value=k; }catch{}
   $("apiKey").addEventListener("change",()=>{ try{localStorage.setItem("kkmt_gkey",$("apiKey").value.trim());}catch{} });
   $("saveBtn").addEventListener("click",saveState); $("loadBtn").addEventListener("click",()=>$("loadFile").click());
-  $("loadFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=()=>{ try{applyState(JSON.parse(rd.result)); if(driveAutosaveController)driveAutosaveController.confirmCurrentKocon();}catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
+  $("loadFile").addEventListener("change",e=>{ e.stopPropagation(); clearTimeout(_livePreviewT); const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=()=>{ try{applyState(JSON.parse(rd.result)); if(driveAutosaveController)driveAutosaveController.confirmCurrentKocon();}catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   $("tollSearch").addEventListener("click",()=>window.open("https://www.driveplaza.com/dp/SearchTop","_blank"));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow()); $("addWday").addEventListener("click",()=>addWdayRow()); $("addLodge").addEventListener("click",()=>{ addLodgeRow(); refreshLodge(); });
   $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth); $("pdfBtn").addEventListener("click",savePdfOnly); $("dataBtn").addEventListener("click",saveDataOnly);
   (function initDevMode(){ let saved=null; try{ saved=localStorage.getItem("kkmt_devmode"); }catch(e){} const guess=(navigator.canShare && matchMedia("(pointer:coarse)").matches)?"mobile":"pc"; $("devMode").value=(saved==="pc"||saved==="mobile")?saved:guess; applyDeviceMode(); $("devMode").addEventListener("change",applyDeviceMode); })();
-  $("addBlank").addEventListener("click",addBlankRow);
   syncWE(); syncBase();
   restoreDraft();
   if($("sheet").querySelector(".empty"))renderSheet();
