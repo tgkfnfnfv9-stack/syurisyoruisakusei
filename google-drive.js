@@ -71,8 +71,22 @@
     const dataType = data.documentType || data[DATA_TYPE_KEY] || "";
     if (dataType && dataType !== docType) throw new DriveError("別の種類の書類データは保存できません。");
     if (docType === "report" && !Array.isArray(data.work)) throw new DriveError("報告書の作業データが不足しています。");
-    for (const key of docType === "report" ? ["parts","customs","lodges","work","workers","activeWorkers"] : ["parts","customs","lodges","wdays"]) {
+    const objectArrays = docType === "report" ? ["parts","customs","lodges","work"] : ["parts","customs","lodges","wdays"];
+    const allArrays = docType === "report" ? [...objectArrays,"workers","activeWorkers"] : [...objectArrays,"excludedItemKeys"];
+    for (const key of allArrays) {
       if (key in data && !Array.isArray(data[key])) throw new DriveError(key + " の形式が正しくありません。");
+    }
+    for (const key of objectArrays) {
+      if (Array.isArray(data[key]) && data[key].some(item => !item || typeof item !== "object" || Array.isArray(item))) {
+        throw new DriveError(key + " の項目形式が正しくありません。");
+      }
+    }
+    if (docType === "report" && data.work.some(row =>
+      "people" in row && (!Array.isArray(row.people) || row.people.some(person => !person || typeof person !== "object" || Array.isArray(person))))) {
+      throw new DriveError("作業者データの形式が正しくありません。");
+    }
+    if ("directEdits" in data && (!data.directEdits || typeof data.directEdits !== "object" || Array.isArray(data.directEdits))) {
+      throw new DriveError("直接編集データの形式が正しくありません。");
     }
     const dataKocon = normalizeKocon(data.fields.mKocon || data.fields.estNo);
     const dataSubject = normalizeSubject(data.fields.subject);
@@ -810,6 +824,10 @@
           }
           if (!isConnected()) {
             const stored = storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json, current.expectedRevision);
+            if (stored) {
+              if (current.kocon && current.previousSubject) removePending(docType, "", current.previousSubject);
+              activeSubject = current.subject;
+            }
             setStatus(stored ? "共通Drive未接続（端末内へ一時保存済み）" : "共通Drive未接続（端末内への保存に失敗）", stored ? "" : "error");
             continue;
           }
