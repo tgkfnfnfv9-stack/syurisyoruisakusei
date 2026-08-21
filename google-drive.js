@@ -825,7 +825,10 @@
           if (!isConnected()) {
             const stored = storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json, current.expectedRevision);
             if (stored) {
-              if (current.kocon && current.previousSubject) removePending(docType, "", current.previousSubject);
+              if (current.previousSubject &&
+                  (current.kocon || current.previousSubject !== current.subject)) {
+                removePending(docType, "", current.previousSubject);
+              }
               activeSubject = current.subject;
             }
             setStatus(stored ? "共通Drive未接続（端末内へ一時保存済み）" : "共通Drive未接続（端末内への保存に失敗）", stored ? "" : "error");
