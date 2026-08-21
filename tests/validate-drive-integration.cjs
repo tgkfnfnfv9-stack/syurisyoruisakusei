@@ -29,7 +29,7 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
   assert.doesNotMatch(html, /accounts\.google\.com\/gsi\/client/);
-  assert.match(html, /<script src="google-drive\.js\?v=20260821-9"><\/script>/);
+  assert.match(html, /<script src="google-drive\.js\?v=20260821-10"><\/script>/);
 }
 
 new vm.Script(drive, { filename: "google-drive.js" });
@@ -115,7 +115,7 @@ assert.match(estimateApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fi
 assert.match(reportApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fields\.estNo/);
 assert.match(estimateApp, /const kocon=\(\$\("mKocon"\)\.value\|\|""\)\.trim\(\)/);
 assert.match(reportApp, /loadJson\(\{kocon,docType:"estimate"\}\)/);
-assert.match(drive, /adoptCurrentKocon\(\{ confirmed = false, save = true \} = \{\}\)/);
+assert.match(drive, /adoptCurrentKocon\(\{ confirmed = false, save = true, revision \} = \{\}\)/);
 assert.match(drive, /confirmCurrentKocon\(\{ save = true \} = \{\}\)/);
 assert.match(drive, /confirmCurrentKocon\(\{ save: true \}\)/);
 assert.match(drive, /if \(save\) await markDirty\(\{ immediate: true \}\)/);
@@ -125,8 +125,14 @@ assert.match(estimateApp, /function autosaveFromEvent\(event\)\{ const target=ev
 assert.match(reportApp, /function autosaveFromEvent\(event\)\{ const target=event&&event\.target; if\(target&&target\.type==="file"\)return; autosave\(\); \}/);
 assert.match(estimateApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
 assert.match(reportApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
-assert.match(estimate, /google-drive\.js\?v=20260821-9/);
-assert.match(report, /google-drive\.js\?v=20260821-9/);
+assert.match(estimate, /google-drive\.js\?v=20260821-10/);
+assert.match(report, /google-drive\.js\?v=20260821-10/);
+assert.match(drive, /expectedRevision/);
+assert.match(drive, /error\.status === 409/);
+assert.match(estimateApp, /onIdentityChanging:cancelLocalAutosave/);
+assert.match(reportApp, /onIdentityChanging:cancelLocalAutosave/);
+assert.match(estimateApp, /buildOutputPair/);
+assert.match(reportApp, /buildOutputPair/);
 
 const sectionSeven = report.match(/<h2><span class="n">7<\/span>[\s\S]*?<\/section>/);
 assert.ok(sectionSeven, "report section 7 must exist");
