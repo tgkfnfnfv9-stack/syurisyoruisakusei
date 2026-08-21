@@ -230,44 +230,42 @@
     }
     const hasExpectedRevision = expectedRevision != null ||
       !!(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "_kkmtRevision"));
-    let expected;
-    if (hasExpectedRevision) {
-      expected = Number.isSafeInteger(Number(expectedRevision)) && Number(expectedRevision) >= 0
-        ? Number(expectedRevision)
-        : documentRevision(data);
-    } else {
-      const current = await centralLoad({ kocon: normalizedKocon, subject: normalizedSubject, docType });
-      expected = documentRevision(current);
-    }
+    const expected = hasExpectedRevision
+      ? (Number.isSafeInteger(Number(expectedRevision)) && Number(expectedRevision) >= 0
+          ? Number(expectedRevision)
+          : documentRevision(data))
+      : null;
+    const requestBody = {
+      action: "save",
+      pin: CONFIG.centralSharedPin,
+      kocon: normalizedKocon,
+      subject: normalizedSubject,
+      previousSubject: normalizeSubject(previousSubject),
+      docType,
+      data
+    };
+    if (expected != null) requestBody.expectedRevision = expected;
     await fetch(CONFIG.centralBackendUrl, {
       method: "POST",
       mode: "no-cors",
       credentials: "include",
       redirect: "follow",
       headers: { "Content-Type": "text/plain;charset=UTF-8" },
-      body: JSON.stringify({
-        action: "save",
-        pin: CONFIG.centralSharedPin,
-        kocon: normalizedKocon,
-        subject: normalizedSubject,
-        previousSubject: normalizeSubject(previousSubject),
-        docType,
-        expectedRevision: expected,
-        data
-      })
+      body: JSON.stringify(requestBody)
     });
     const loaded = await centralLoad({
       kocon: normalizedKocon,
       subject: normalizedSubject,
       docType
     });
-    const wantedRevision = expected + 1;
-    if (!loaded || documentRevision(loaded) !== wantedRevision ||
+    const loadedRevision = documentRevision(loaded);
+    const revisionMatches = expected == null || loadedRevision === expected + 1;
+    if (!loaded || !revisionMatches ||
         JSON.stringify(comparableDocument(loaded)) !== JSON.stringify(comparableDocument(data))) {
       throw new DriveError("他の端末で更新されています。最新データを読み込んでから、もう一度保存してください。", 409);
     }
     centralConnected = true;
-    return { ok: true, revision: wantedRevision, updatedAt: loaded._kkmtUpdatedAt || "" };
+    return { ok: true, revision: loadedRevision, updatedAt: loaded._kkmtUpdatedAt || "" };
   }
 
   async function prepare() {
@@ -468,7 +466,8 @@
       `appProperties has { key='subjectKey' and value='${escapeQuery(normalized)}' }`,
       `appProperties has { key='docType' and value='${escapeQuery(docType)}' }`
     ].join(" and ");
-    return (await listFiles(query))[0] || null;
+    const matches = await listFiles(query);
+    return matches.find(file => !normalizeKocon(file && file.appProperties && file.appProperties.kocon)) || matches[0] || null;
   }
 
   async function findDocumentByEmbeddedSubject(subject, docType) {
