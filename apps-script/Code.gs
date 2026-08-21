@@ -28,7 +28,14 @@ function doGet(event) {
 }
 
 function doPost(event) {
-  return jsonResponse_(handleRequest_(parseRequest_(event)));
+  try {
+    return jsonResponse_(handleRequest_(parseRequest_(event)));
+  } catch (error) {
+    return jsonResponse_({
+      ok: false,
+      error: error && error.message ? error.message : String(error)
+    });
+  }
 }
 
 function handleRequest_(request) {
@@ -177,7 +184,7 @@ function findDocument_(docType, kocon, subject) {
     const byKocon = documents.find(function (document) {
       return document.kocon === normalizedKocon;
     });
-    if (byKocon) return byKocon;
+    return byKocon || null;
   }
   if (normalizedSubject) {
     return documents.find(function (document) {
@@ -215,9 +222,16 @@ function saveDocument_(request) {
   lock.waitLock(30000);
   try {
     const folder = getDocumentFolder_(docType);
-    let existing = findDocument_(docType, kocon, subject);
+    let existing = kocon
+      ? findDocument_(docType, kocon, "")
+      : findDocument_(docType, "", subject);
+    if (!existing && subject) {
+      const bySubject = findDocument_(docType, "", subject);
+      if (!kocon || (bySubject && !bySubject.kocon)) existing = bySubject;
+    }
     if (!existing && previousSubject && previousSubject !== subject) {
-      existing = findDocument_(docType, "", previousSubject);
+      const byPreviousSubject = findDocument_(docType, "", previousSubject);
+      if (!kocon || (byPreviousSubject && !byPreviousSubject.kocon)) existing = byPreviousSubject;
     }
     const stamped = stampDocument_(request.data, docType);
     const json = JSON.stringify(stamped, null, 2);
