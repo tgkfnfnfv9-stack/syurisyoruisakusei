@@ -706,7 +706,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260821-11"></script>
+<script src="google-drive.js?v=20260821-12"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1034,7 +1034,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   try{ const k=localStorage.getItem("kkmt_gkey"); if(k)$("apiKey").value=k; }catch{}
   $("apiKey").addEventListener("change",()=>{ try{localStorage.setItem("kkmt_gkey",$("apiKey").value.trim());}catch{} });
   $("loadBtn").addEventListener("click",()=>$("loadFile").click());
-  $("loadFile").addEventListener("change",e=>{ e.stopPropagation(); clearTimeout(_livePreviewT); const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=()=>{ try{ const state=validateEstimateState(JSON.parse(rd.result)); applyState(state); autosave(); if(driveAutosaveController){ driveAutosaveController.adoptCurrentKocon({confirmed:true,save:false}); driveAutosaveController.setStatus("端末の見積データを読み込みました。共通Driveは上書きしていません。","ok"); } }catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
+  $("loadFile").addEventListener("change",e=>{ e.stopPropagation(); clearTimeout(_livePreviewT); const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=async()=>{ try{ const state=validateEstimateState(JSON.parse(rd.result)); if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); applyState(state); autosave(); if(driveAutosaveController){ await driveAutosaveController.adoptCurrentKocon({confirmed:true,save:false}); driveAutosaveController.setStatus("端末の見積データを読み込みました。共通Driveは上書きしていません。","ok"); } }catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   $("tollSearch").addEventListener("click",()=>window.open("https://www.driveplaza.com/dp/SearchTop","_blank"));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow()); $("addWday").addEventListener("click",()=>addWdayRow()); $("addLodge").addEventListener("click",()=>{ addLodgeRow(); refreshLodge(); });
