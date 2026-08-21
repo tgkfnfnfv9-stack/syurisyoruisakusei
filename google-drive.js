@@ -62,6 +62,31 @@
     delete copy[DATA_TYPE_KEY];
     return copy;
   }
+  function validateDocumentForSave(data, docType, kocon, subject) {
+    requireDocType(docType);
+    if (!data || typeof data !== "object" || Array.isArray(data) ||
+        !data.fields || typeof data.fields !== "object" || Array.isArray(data.fields)) {
+      throw new DriveError("保存データの必須項目が不足しています。");
+    }
+    const dataType = data.documentType || data[DATA_TYPE_KEY] || "";
+    if (dataType && dataType !== docType) throw new DriveError("別の種類の書類データは保存できません。");
+    if (docType === "report" && !Array.isArray(data.work)) throw new DriveError("報告書の作業データが不足しています。");
+    for (const key of docType === "report" ? ["parts","customs","lodges","work","workers","activeWorkers"] : ["parts","customs","lodges","wdays"]) {
+      if (key in data && !Array.isArray(data[key])) throw new DriveError(key + " の形式が正しくありません。");
+    }
+    const dataKocon = normalizeKocon(data.fields.mKocon || data.fields.estNo);
+    const dataSubject = normalizeSubject(data.fields.subject);
+    if (normalizeKocon(kocon) !== dataKocon) throw new DriveError("高コン番号と保存データが一致しません。");
+    if (normalizeSubject(subject) && normalizeSubject(subject) !== dataSubject) throw new DriveError("件名と保存データが一致しません。");
+    if (docType === "report" && "signature" in data) {
+      const signature = data.signature || "";
+      if (typeof signature !== "string" || signature.length > 5000000 ||
+          (signature && !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=\r\n]+$/.test(signature))) {
+        throw new DriveError("サイン画像の形式または容量が正しくありません。");
+      }
+    }
+    return data;
+  }
   function stampDocumentType(data, docType, revision) {
     requireDocType(docType);
     const stamped = data && typeof data === "object" && !Array.isArray(data) ? Object.assign({}, data) : { value: data };
@@ -225,6 +250,7 @@
     requireDocType(docType);
     const normalizedKocon = normalizeKocon(kocon);
     const normalizedSubject = normalizeSubject(subject);
+    validateDocumentForSave(data, docType, normalizedKocon, normalizedSubject);
     if (!normalizedKocon && !(docType === "estimate" && normalizedSubject)) {
       throw new DriveError(docType === "estimate" ? "高コンまたは件名が空欄のため保存できません。" : "高コンが空欄のため保存できません。");
     }
@@ -583,9 +609,12 @@
     if (CONFIG.centralBackendUrl) {
       return centralSave({ kocon, subject, previousSubject, docType, data, expectedRevision });
     }
+    throw new DriveError("安全な競合防止のため、共通Driveバックエンド経由で保存してください。", 503);
+    /* istanbul ignore next -- direct OAuth writes are disabled because Drive API has no atomic create/update CAS here */
     requireDocType(docType);
     const normalized = normalizeKocon(kocon);
     const normalizedSubject = normalizeSubject(subject);
+    validateDocumentForSave(data, docType, normalized, normalizedSubject);
     const suppliedRevision = expectedRevision != null ||
       !!(data && typeof data === "object" && Object.prototype.hasOwnProperty.call(data, "_kkmtRevision"));
     let expected = Number.isSafeInteger(Number(expectedRevision)) && Number(expectedRevision) >= 0
@@ -607,7 +636,10 @@
       if (!candidateKocon) existing = byPreviousSubject;
     }
     const existingRevision = existing ? Number((existing.appProperties && existing.appProperties.revision) || 0) : 0;
-    if (!suppliedRevision) expected = existingRevision;
+    if (!suppliedRevision && existingRevision > 0) {
+      throw new DriveError("旧形式の保存データは、最新版を読み込むまで上書きできません。", 409);
+    }
+    if (!suppliedRevision) expected = 0;
     if ((existing && existingRevision !== expected) || (!existing && expected !== 0)) {
       throw new DriveError("他の端末で更新されています。最新データを読み込んでから、もう一度保存してください。", 409);
     }
@@ -694,7 +726,7 @@
     for (const entry of getPendingItems(docTypeFilter)) {
       try {
         const data = entry.item.data || JSON.parse(entry.item.json);
-        await saveJson({
+        const result = await saveJson({
           kocon: entry.item.kocon,
           subject: entry.item.subject,
           previousSubject: entry.item.previousSubject,
@@ -705,7 +737,7 @@
         try {
           localStorage.removeItem(entry.key);
         } catch (_) {}
-        results.push({ ok: true, item: entry.item });
+        results.push({ ok: true, item: entry.item, result });
       } catch (error) {
         results.push({ ok: false, item: entry.item, error });
         if (error instanceof DriveError && error.status === 401) break;
@@ -838,6 +870,15 @@
       return null;
     }
 
+    async function whenIdle() {
+      while (commitPromise) await commitPromise;
+      clearTimeout(timer);
+      if (saveRequested) await saveLoop();
+      if (savingPromise) await savingPromise;
+      if (commitPromise || saveRequested || savingPromise) return whenIdle();
+      return true;
+    }
+
     async function confirmCurrentKocon({ save = true } = {}) {
       if (commitPromise) return commitPromise;
       commitPromise = (async () => {
@@ -845,6 +886,9 @@
         const previous = activeKocon;
         const previousConfirmed = confirmedKocon;
         const previousRevision = activeRevision;
+        const nextSubject = normalizeSubject(fallbackInput && fallbackInput.value);
+        const isSubjectPromotion = docType === "estimate" && !previous && !!next &&
+          !!activeSubject && nextSubject === activeSubject;
         let identityHookRan = false;
         koconInput.value = next;
 
@@ -870,7 +914,7 @@
         activeKocon = next;
         if (next !== previous) {
           confirmedKocon = "";
-          activeRevision = 0;
+          activeRevision = isSubjectPromotion ? previousRevision : 0;
           if (onSavedRevision) await onSavedRevision(activeRevision);
         }
         if (!next) {
@@ -890,6 +934,7 @@
           return true;
         }
 
+        let loadedExisting = false;
         if (onKoconConfirmed && confirmedKocon !== next) {
           koconInput.disabled = true;
           let confirmed = false;
@@ -900,6 +945,7 @@
               setStatus
             });
             confirmed = confirmation !== false;
+            loadedExisting = !!(confirmation && confirmation.loaded);
             if (confirmed) {
               const loadedRevision = Number(confirmation && confirmation.revision);
               activeRevision = Number.isSafeInteger(loadedRevision) && loadedRevision >= 0
@@ -924,9 +970,14 @@
             return false;
           }
           confirmedKocon = next;
+          if (loadedExisting) {
+            const loadedSnapshot = snapshot();
+            lastSavedJson.set(snapshotKey(loadedSnapshot), loadedSnapshot.json);
+            activeSubject = loadedSnapshot.subject;
+          }
         }
 
-        if (save) await markDirty({ immediate: true });
+        if (save && !loadedExisting) await markDirty({ immediate: true });
         if (next !== previous && onIdentityChanged) await onIdentityChanged({ previous, next });
         return true;
       })().finally(() => {
@@ -966,6 +1017,18 @@
       removePending(docType, current, subject);
     }
 
+    async function adoptFlushedRevision(results) {
+      const currentKocon = normalizeKocon(koconInput && koconInput.value);
+      const currentSubject = normalizeSubject(fallbackInput && fallbackInput.value);
+      const synced = results.filter(entry => entry.ok && entry.result && Number.isSafeInteger(Number(entry.result.revision))).find(entry =>
+        (currentKocon && normalizeKocon(entry.item.kocon) === currentKocon) ||
+        (!currentKocon && currentSubject && normalizeSubject(entry.item.subject) === currentSubject)
+      );
+      if (!synced) return;
+      activeRevision = Number(synced.result.revision);
+      if (onSavedRevision) await onSavedRevision(activeRevision);
+    }
+
     async function handleConnect() {
       setStatus("共通Driveへ接続中…");
       connectButton.disabled = true;
@@ -974,9 +1037,11 @@
         connectButton.textContent = "共通Drive接続済み";
         setStatus("共通Driveへ接続しました。未同期データを確認中…", "ok");
         const results = await flushPending(docType);
+        await adoptFlushedRevision(results);
         const failures = results.filter(result => !result.ok);
         if (failures.length) {
-          setStatus("一部の未同期データを保存できませんでした。", "error");
+          setStatus("未同期データが他の端末の更新と競合しています。先にDriveの最新データを確認してください。", "error");
+          return;
         } else if (results.length) {
           setStatus(`${results.length}件の未同期データを保存しました。`, "ok");
         } else {
@@ -1019,9 +1084,11 @@
         connectButton.textContent = "共通Drive接続済み";
         setStatus("共通Drive接続済み。未同期データを確認中…", "ok");
         flushPending(docType).then(async results => {
+          await adoptFlushedRevision(results);
           const failures = results.filter(result => !result.ok);
           if (failures.length) {
-            setStatus("一部の未同期データを保存できませんでした。", "error");
+            setStatus("未同期データが他の端末の更新と競合しています。先にDriveの最新データを確認してください。", "error");
+            return;
           } else if (results.length) {
             setStatus(`${results.length}件の未同期${label}データを保存しました。`, "ok");
           } else {
@@ -1106,6 +1173,7 @@
     const api = {
       init,
       markDirty,
+      whenIdle,
       confirmCurrentKocon,
       adoptCurrentKocon,
       discardCurrent,
