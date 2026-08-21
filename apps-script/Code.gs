@@ -233,7 +233,7 @@ function saveDocument_(request) {
     const folder = getDocumentFolder_(docType);
     let existing = kocon
       ? findDocument_(docType, kocon, "")
-      : findDocument_(docType, "", subject);
+      : null;
     if (!existing && subject) {
       const bySubject = findDocument_(docType, "", subject);
       if (bySubject && !bySubject.kocon) existing = bySubject;
