@@ -139,6 +139,7 @@ assert.match(estimateApp, /buildOutputPair/);
 assert.match(reportApp, /buildOutputPair/);
 assert.match(estimateApp, /driveAutosaveController\.whenIdle/);
 assert.match(reportApp, /driveAutosaveController\.whenIdle/);
+assert.match(reportApp, /async function saveState\(\)\{ if\(driveAutosaveController&&driveAutosaveController\.whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
 assert.match(reportApp, /restoreReportDirectEdits\(\); recalcReport\(\)/);
 assert.match(reportApp, /const firstWorkId=/);
 
