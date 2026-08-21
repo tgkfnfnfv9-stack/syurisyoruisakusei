@@ -151,6 +151,9 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 .ss-done{ display:flex; gap:10px; margin-top:10px; }
 .ss-done button{ flex:1; padding:14px; font-size:15px; font-weight:700; border-radius:10px; border:2px solid var(--navy); background:#fff; color:var(--navy); cursor:pointer; }
 .ss-done button.on{ background:var(--navy); color:#fff; }
+.ss-sign-io{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:10px; }
+.ss-sign-io button{ padding:11px 8px; font-size:13px; font-weight:700; border-radius:9px; border:1px solid var(--navy2); background:#faf3ea; color:var(--navy); cursor:pointer; }
+.ss-sign-io button:hover{ background:#f5e9da; }
 #ssSigPad{ height:200px; }
 .ss-actions{ display:flex; gap:10px; margin-top:14px; }
 .ss-actions button{ flex:1; padding:15px; font-size:15px; font-weight:700; border:none; border-radius:10px; cursor:pointer; }
@@ -412,6 +415,11 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <div style="font-size:13px;color:#445;">本作業にて検収完了と致します。下にご署名ください。</div>
     <canvas id="ssSigPad"></canvas>
     <div class="sub-links"><a id="ssSigClear">消す</a></div>
+    <div class="ss-sign-io">
+      <button type="button" id="ssSigExport">💾 サインデータ出力</button>
+      <button type="button" id="ssSigImport">📂 サインデータ入力</button>
+      <input id="ssSigFile" type="file" accept="application/json,.json" class="hidden">
+    </div>
   </div>
   <div class="ss-actions"><button class="cancel" id="ssCancel">閉じる</button><button class="ok" id="ssOk">サインを確定して戻る</button></div>
 </div>
@@ -1295,8 +1303,23 @@ function makePad(cv,onEnd){ const ctx=cv.getContext("2d");
   const end=()=>{if(drawing){drawing=false;if(onEnd)onEnd();}}; cv.addEventListener("pointerup",end); cv.addEventListener("pointerleave",end);
   return { ctx, resize, clear:()=>ctx.clearRect(0,0,cv.width,cv.height), draw:(d)=>{ resize(); if(d){const i=new Image();i.onload=()=>ctx.drawImage(i,0,0,cv.width,cv.height);i.src=d;} } };
 }
-let mainPad=null, ssPad=null;
+let mainPad=null, ssPad=null, ssDraftSignature="";
 function updateSigState(){ const el=$("sigState"); if(el)el.textContent=sigDataURL?"✅ サイン取得済み（サイン画面で修正できます）":"— サイン未取得"; }
+function signatureJsonPayload(signature){ return {
+  type:"kkmt-customer-signature",version:1,createdAt:new Date().toISOString(),
+  client:($("billName").value||$("client").value||"").trim(),subject:$("subject").value.trim(),signature
+}; }
+function signatureFromJson(data){ const signature=data&&data.signature;
+  if(typeof signature!=="string"||!/^data:image\/(?:png|jpeg|webp);base64,/.test(signature))throw new Error("サイン画像が入ったJSONではありません。");
+  return signature;
+}
+async function exportSignatureJson(){ if(!ssDraftSignature){ alert("先にお客様のサインを記入してください。"); return; }
+  const payload=signatureJsonPayload(ssDraftSignature),name=fileBaseName()+"_お客様サイン.json";
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}),file=new File([blob],name,{type:"application/json"});
+  if(navigator.canShare&&navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file],title:name}); return; }catch(err){ if(err&&err.name==="AbortError")return; } }
+  const url=URL.createObjectURL(blob),a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+}
+function importSignatureJson(data){ ssDraftSignature=signatureFromJson(data); if(ssPad)ssPad.draw(ssDraftSignature); }
 function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png"); updateSigState(); scheduleLivePreview(); if(driveAutosaveController)driveAutosaveController.markDirty();});
     setTimeout(()=>mainPad.resize(),60); window.addEventListener("resize",()=>{ if(mainPad){mainPad.resize(); if(sigDataURL)mainPad.draw(sigDataURL);} }); }
   const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear(); sigDataURL=""; updateSigState(); scheduleLivePreview(); });
@@ -1305,8 +1328,8 @@ function openSignScreen(){
   $("ssClient").textContent=($("billName").value||$("client").value).trim(); $("ssSubject").textContent=$("subject").value.trim();
   $("ssTrouble").value=$("trouble").value; $("ssCause").value=$("cause").value; $("ssAction").value=$("action").value;
   $("ssComplete").classList.toggle("on",$("doneComplete").checked); $("ssIncomplete").classList.toggle("on",$("doneIncomplete").checked);
-  $("signScreen").classList.add("show"); const cv=$("ssSigPad"); cv.setAttribute("data-h","200"); if(!ssPad)ssPad=makePad(cv,()=>{}); ssPad.draw(sigDataURL); }
-function closeSignScreen(save){ if(save){ sigDataURL=$("ssSigPad").toDataURL("image/png");
+  $("signScreen").classList.add("show"); const cv=$("ssSigPad"); cv.setAttribute("data-h","200"); ssDraftSignature=sigDataURL; if(!ssPad)ssPad=makePad(cv,()=>{ssDraftSignature=cv.toDataURL("image/png");}); ssPad.draw(ssDraftSignature); }
+function closeSignScreen(save){ if(save){ sigDataURL=ssDraftSignature;
     $("trouble").value=$("ssTrouble").value; $("cause").value=$("ssCause").value; $("action").value=$("ssAction").value;
     $("doneComplete").checked=$("ssComplete").classList.contains("on"); $("doneIncomplete").checked=$("ssIncomplete").classList.contains("on");
     if(mainPad)mainPad.draw(sigDataURL); updateSigState(); renderReport(); }
@@ -1419,7 +1442,10 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("addWork").addEventListener("click",()=>addWorkRow());
   $("openSign").addEventListener("click",openSignScreen);
   $("ssOk").addEventListener("click",()=>closeSignScreen(true)); $("ssCancel").addEventListener("click",()=>closeSignScreen(false));
-  $("ssSigClear").addEventListener("click",()=>{ if(ssPad)ssPad.clear(); });
+  $("ssSigClear").addEventListener("click",()=>{ if(ssPad)ssPad.clear(); ssDraftSignature=""; });
+  $("ssSigExport").addEventListener("click",exportSignatureJson);
+  $("ssSigImport").addEventListener("click",()=>$("ssSigFile").click());
+  $("ssSigFile").addEventListener("change",e=>{ const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=()=>{ try{ importSignatureJson(JSON.parse(rd.result)); alert("サインデータを読み込みました。確認後、「サインを確定して戻る」を押してください。"); }catch(err){ alert("サインデータの読み込みに失敗しました："+err.message); } }; rd.readAsText(f); e.target.value=""; });
   $("ssComplete").addEventListener("click",()=>{ $("ssComplete").classList.toggle("on"); if($("ssComplete").classList.contains("on"))$("ssIncomplete").classList.remove("on"); });
   $("ssIncomplete").addEventListener("click",()=>{ $("ssIncomplete").classList.toggle("on"); if($("ssIncomplete").classList.contains("on"))$("ssComplete").classList.remove("on"); });
   $("doneComplete").addEventListener("change",()=>{ if($("doneComplete").checked)$("doneIncomplete").checked=false; });
