@@ -18,8 +18,8 @@ body{ font-family:"Hiragino Kaku Gothic ProN","Yu Gothic UI","Meiryo",system-ui,
 .app{ display:grid; grid-template-columns:400px 1fr; height:100vh; }
 .form{ overflow-y:auto; background:#f7f9fb; border-right:1px solid var(--line); padding:16px 16px 80px; }
 .form h1{ font-size:17px; color:var(--navy); } .form .sub{ font-size:11px; color:#6a7787; margin-top:2px; }
-.io{ display:flex; gap:8px; margin-top:12px; }
-.io button{ flex:0 1 170px; width:170px; max-width:100%; padding:9px; font-size:12px; font-weight:700; border-radius:8px; cursor:pointer; border:1px solid var(--navy2); background:#faf3ea; color:var(--navy); }
+.io{ display:block; margin-top:12px; }
+.io button{ display:block; width:100%; padding:9px; font-size:12px; font-weight:700; border-radius:8px; cursor:pointer; border:1px solid var(--navy2); background:#faf3ea; color:var(--navy); }
 .io button:hover{ background:#f5e9da; }
 .topnav{ display:flex; justify-content:space-between; align-items:center; gap:8px; margin-bottom:12px; }
 .topnav .homeBtn,.topnav .resetBtn{ padding:8px 12px; font-size:12px; font-weight:700; border-radius:8px; cursor:pointer; border:1px solid var(--navy2); background:#faf3ea; color:var(--navy); text-decoration:none; display:inline-flex; align-items:center; gap:5px; line-height:1; }
@@ -240,11 +240,11 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <button class="btn btn-blue big" id="pdfBtn">PDF保存</button>
         <button class="btn btn-blue big" id="dataBtn">データ保存</button>
       </div></div>
-    <p class="foot">見積書の備考欄と基本料金一覧行の品名枠はクリックで直接修正可。明細の行番号横「×」で行削除。A4・横推奨。</p>
+    <p class="foot">通常明細の「備考」と、基本料金一覧と同じ横列にある「品名」枠はクリックで直接編集できます。明細の行番号横「×」で行削除。A4・横推奨。</p>
   </aside>
 
   <main class="preview">
-    <div class="bar"><span class="tip">備考欄と基本料金一覧行の品名枠をクリックして直接修正できます。</span></div>
+    <div class="bar"><span class="tip">通常明細の「備考」と、基本料金一覧と同じ横列にある「品名」枠をクリックして直接編集できます。</span></div>
     <div id="sheet" class="sheet"><div class="empty">左の入力内容が<br>ここに自動反映されます</div></div>
   </main>
 </div>
