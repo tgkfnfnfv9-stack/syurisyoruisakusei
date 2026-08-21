@@ -132,6 +132,35 @@ function documentRevision_(data) {
   return Number.isSafeInteger(value) && value >= 0 ? value : 0;
 }
 
+function validateDocumentData_(data, docType, kocon, subject) {
+  const type = requireDocType_(docType);
+  if (!data || typeof data !== "object" || Array.isArray(data) ||
+      !data.fields || typeof data.fields !== "object" || Array.isArray(data.fields)) {
+    throw new Error("保存データの必須項目が不足しています。");
+  }
+  const dataType = String(data.documentType || data._kkmtDocumentType || "");
+  if (dataType && dataType !== type) throw new Error("別の種類の書類データは保存できません。");
+  if (type === "report" && !Array.isArray(data.work)) throw new Error("報告書の作業データが不足しています。");
+  const arrays = type === "report"
+    ? ["parts","customs","lodges","work","workers","activeWorkers"]
+    : ["parts","customs","lodges","wdays"];
+  arrays.forEach(function (key) {
+    if (key in data && !Array.isArray(data[key])) throw new Error(key + " の形式が正しくありません。");
+  });
+  const fieldsKocon = normalize_(data.fields.mKocon || data.fields.estNo);
+  const fieldsSubject = normalize_(data.fields.subject);
+  if (normalize_(kocon) !== fieldsKocon) throw new Error("高コン番号と保存データが一致しません。");
+  if (normalize_(subject) && normalize_(subject) !== fieldsSubject) throw new Error("件名と保存データが一致しません。");
+  if (type === "report" && "signature" in data) {
+    const signature = data.signature || "";
+    if (typeof signature !== "string" || signature.length > 5000000 ||
+        (signature && !/^data:image\/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=\r\n]+$/.test(signature))) {
+      throw new Error("サイン画像の形式または容量が正しくありません。");
+    }
+  }
+  return data;
+}
+
 function stampDocument_(data, docType, revision) {
   const stamped = data && typeof data === "object" && !Array.isArray(data)
     ? Object.assign({}, data)
@@ -222,6 +251,7 @@ function saveDocument_(request) {
   const kocon = normalize_(request.kocon);
   const subject = normalize_(request.subject);
   const previousSubject = normalize_(request.previousSubject);
+  validateDocumentData_(request.data, docType, kocon, subject);
   if (!kocon && !(docType === "estimate" && subject)) {
     throw new Error(docType === "estimate"
       ? "高コンまたは件名が空欄のため保存できません。"
@@ -247,9 +277,12 @@ function saveDocument_(request) {
     const hasExpectedRevision = request.expectedRevision != null ||
       !!(request.data && typeof request.data === "object" && Object.prototype.hasOwnProperty.call(request.data, "_kkmtRevision"));
     const existingRevision = existing ? documentRevision_(existing.data) : 0;
+    if (!hasExpectedRevision && existingRevision > 0) {
+      throw new Error("CONFLICT: 旧形式の保存データは、最新版を読み込むまで上書きできません。");
+    }
     const expectedRevision = hasExpectedRevision
       ? (Number.isSafeInteger(expectedRevisionValue) && expectedRevisionValue >= 0 ? expectedRevisionValue : documentRevision_(request.data))
-      : existingRevision;
+      : 0;
     if ((existing && existingRevision !== expectedRevision) || (!existing && expectedRevision !== 0)) {
       throw new Error("CONFLICT: 他の端末で更新されています。最新データを読み込んでください。");
     }
