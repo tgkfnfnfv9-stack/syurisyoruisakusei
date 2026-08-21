@@ -1058,7 +1058,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     onKoconConfirmed:autoLoadEstimateFromDrive,
     onIdentityChanging:cancelLocalAutosave,
     onIdentityChanged:writeLocalDraftNow,
-    onSavedRevision:revision=>{ _documentRevision=revision; },
+    onSavedRevision:revision=>{ _documentRevision=revision; writeLocalDraftNow(); },
     skipInitialLoad:restoredDraft
   });
   driveAutosaveController.init();
