@@ -1050,7 +1050,7 @@ function collectState(){ const s={documentType:"report",schemaVersion:2,_kkmtRev
 function fileBaseName(){ const kocon=(($("mKocon")&&$("mKocon").value)||"").trim();
   const company=($("billName").value.trim()||$("client").value.trim()||"作業報告書");
   return [...[kocon,company].filter(Boolean),"報告書"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
-async function saveState(){ const s=collectState(); const name=fileBaseName()+".json";
+async function saveState(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); const s=collectState(); const name=fileBaseName()+".json";
   const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});
   const file=new File([blob],name,{type:"application/json"});
   if(navigator.canShare && navigator.canShare({files:[file]})){
