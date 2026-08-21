@@ -337,6 +337,60 @@ vm.runInNewContext(
   assert.notEqual(localStorage.getItem(conflictKey), null);
   assert.match(conflictStatus.textContent, /競合/);
 
+  const offlineValues = new Map();
+  const offlineStorage = {
+    get length() { return offlineValues.size; },
+    key: index => [...offlineValues.keys()][index] ?? null,
+    getItem: key => offlineValues.has(key) ? offlineValues.get(key) : null,
+    setItem: (key, value) => offlineValues.set(key, String(value)),
+    removeItem: key => offlineValues.delete(key)
+  };
+  const offlineWindow = {
+    addEventListener() {},
+    confirm: () => true,
+    setTimeout,
+    clearTimeout,
+    KKMT_CENTRAL_DRIVE_CONFIG: { url: "https://central.example/exec", pin: "ad5d1bc7" }
+  };
+  offlineWindow.window = offlineWindow;
+  const offlineContext = {
+    window: offlineWindow,
+    localStorage: offlineStorage,
+    fetch: async () => { throw new Error("offline fetch must not run"); },
+    Headers, URLSearchParams, URL, console, setTimeout, clearTimeout, Intl, Date, Math,
+    encodeURIComponent, decodeURIComponent
+  };
+  vm.runInNewContext(
+    fs.readFileSync(path.join(__dirname, "..", "google-drive.js"), "utf8"),
+    offlineContext,
+    { filename: "google-drive-offline.js" }
+  );
+  const offlineDrive = offlineWindow.KKMTDrive;
+  let offlineState = {
+    documentType: "estimate", _kkmtRevision: 0,
+    fields: { mKocon: "", subject: "オフライン昇格" }, wdays: []
+  };
+  const offlineKocon = makeInput("");
+  const offlineController = offlineDrive.createAutosaveController({
+    docType: "estimate",
+    rootElement: { addEventListener() {} },
+    koconInput: offlineKocon,
+    fallbackInput: makeInput("オフライン昇格"),
+    statusElement: makeStatus(),
+    connectButton: makeButton(),
+    collectState: () => clone(offlineState),
+    onSavedRevision: revision => { offlineState._kkmtRevision = revision; }
+  });
+  await offlineController.markDirty({ immediate: true });
+  assert.equal(offlineStorage.length, 1);
+  offlineKocon.value = "offline-777";
+  offlineState.fields.mKocon = "offline-777";
+  await offlineController.confirmCurrentKocon({ save: true });
+  assert.equal(offlineStorage.length, 1);
+  const onlyOfflineKey = offlineStorage.key(0);
+  assert.match(onlyOfflineKey, /k_offline-777/);
+  assert.doesNotMatch(onlyOfflineKey, /s_/);
+
   console.log("Central Drive client checks passed.");
 })().catch(error => {
   console.error(error);
