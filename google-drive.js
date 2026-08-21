@@ -13,7 +13,7 @@
     estimateFolderName: "見積もり",
     legacyEstimateFolderName: "見積書",
     reportFolderName: "報告書",
-    schemaVersion: "1"
+    schemaVersion: "2"
   });
 
   const DRIVE_API = "https://www.googleapis.com/drive/v3";
@@ -561,9 +561,15 @@
     }
     const folderId = await getDocumentFolder(docType);
     let existing = normalized ? await findDocument(normalized, docType) : null;
-    if (!existing && normalizedSubject) existing = await findDocumentBySubject(normalizedSubject, docType);
+    if (!existing && normalizedSubject) {
+      const bySubject = await findDocumentBySubject(normalizedSubject, docType);
+      const candidateKocon = normalizeKocon(bySubject && bySubject.appProperties && bySubject.appProperties.kocon);
+      if (!normalized || !candidateKocon) existing = bySubject;
+    }
     if (!existing && previousSubject && normalizeSubject(previousSubject) !== normalizedSubject) {
-      existing = await findDocumentBySubject(previousSubject, docType);
+      const byPreviousSubject = await findDocumentBySubject(previousSubject, docType);
+      const candidateKocon = normalizeKocon(byPreviousSubject && byPreviousSubject.appProperties && byPreviousSubject.appProperties.kocon);
+      if (!normalized || !candidateKocon) existing = byPreviousSubject;
     }
     if (existing) {
       try {
@@ -674,8 +680,9 @@
     const collectState = options.collectState;
     const onKoconConfirmed = options.onKoconConfirmed;
     const debounceMs = options.debounceMs || 550;
-    const confirmedKocons = new Set();
+    let confirmedKocon = "";
     const lastSavedJson = new Map();
+    let skipNextInitialLoad = !!options.skipInitialLoad;
 
     let activeKocon = normalizeKocon(koconInput && koconInput.value);
     let activeSubject = normalizeSubject(fallbackInput && fallbackInput.value);
@@ -791,9 +798,16 @@
             setStatus("高コンの変更を取り消しました。");
             return false;
           }
+
+          clearTimeout(timer);
+          if (savingPromise) await savingPromise;
+          koconInput.value = previous;
+          await markDirty({ immediate: true });
+          koconInput.value = next;
         }
 
         activeKocon = next;
+        if (next !== previous) confirmedKocon = "";
         if (!next) {
           setStatus(docType === "estimate"
             ? "高コンがなくても、件名で共通Driveへ自動保存できます。"
@@ -804,13 +818,18 @@
           return true;
         }
 
-        if (onKoconConfirmed && !confirmedKocons.has(next)) {
+        if (!isConnected()) {
+          if (save) await markDirty({ immediate: true });
+          return true;
+        }
+
+        if (onKoconConfirmed && confirmedKocon !== next) {
           koconInput.disabled = true;
           let confirmed = false;
           try {
             confirmed = (await onKoconConfirmed({
               kocon: next,
-              isConnected: isConnected(),
+              isConnected: true,
               setStatus
             })) !== false;
           } catch (error) {
@@ -819,12 +838,11 @@
           } finally {
             koconInput.disabled = false;
           }
-          if (confirmed) {
-            confirmedKocons.add(next);
-            if (save && isConnected()) await markDirty({ immediate: true });
-          }
+          if (!confirmed) return false;
+          confirmedKocon = next;
         }
 
+        if (save) await markDirty({ immediate: true });
         return true;
       })().finally(() => {
         commitPromise = null;
@@ -836,8 +854,19 @@
       const current = normalizeKocon(koconInput.value);
       koconInput.value = current;
       activeKocon = current;
-      if (confirmed && current) confirmedKocons.add(current);
+      activeSubject = normalizeSubject(fallbackInput && fallbackInput.value);
+      confirmedKocon = confirmed ? current : "";
       return save ? markDirty({ immediate: true }) : Promise.resolve();
+    }
+
+    async function resumeIdentity() {
+      if (skipNextInitialLoad) {
+        skipNextInitialLoad = false;
+        await adoptCurrentKocon({ confirmed: true, save: false });
+        setStatus("端末内の下書きを復元しました。共通Driveは自動で上書きしていません。", "ok");
+        return true;
+      }
+      return confirmCurrentKocon();
     }
 
     function discardCurrent() {
@@ -865,7 +894,7 @@
         } else {
           setStatus("共通Driveへ接続済み", "ok");
         }
-        await confirmCurrentKocon();
+        await resumeIdentity();
       } catch (error) {
         console.error("Central Drive connection failed", error);
         setStatus("共通Driveへ接続できません。通信環境を確認して、もう一度お試しください。", "error");
@@ -910,7 +939,7 @@
           } else {
             setStatus("共通Drive接続済み", "ok");
           }
-          await confirmCurrentKocon();
+          await resumeIdentity();
         }).catch(error => {
           console.error("Central Drive session resume failed", error);
           setStatus("接続の再開に失敗しました。接続ボタンを押してください。", "error");
@@ -925,14 +954,20 @@
       connectButton.addEventListener("click", handleConnect);
 
       ["change", "focusout"].forEach(eventName => {
-        koconInput.addEventListener(eventName, () => confirmCurrentKocon({ save: false }));
+        koconInput.addEventListener(eventName, () => confirmCurrentKocon({ save: true }));
       });
       koconInput.addEventListener("keydown", event => {
         if (event.key !== "Enter") return;
         event.preventDefault();
         koconInput.blur();
-        confirmCurrentKocon({ save: false });
+        confirmCurrentKocon({ save: true });
       });
+
+      if (fallbackInput) {
+        fallbackInput.addEventListener("input", () => markDirty());
+        fallbackInput.addEventListener("change", () => markDirty());
+        fallbackInput.addEventListener("focusout", () => markDirty());
+      }
 
       root.addEventListener("change", event => {
         const target = event.target;
