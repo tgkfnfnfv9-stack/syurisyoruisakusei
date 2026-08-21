@@ -160,6 +160,23 @@ function validateDocumentData_(data, docType, kocon, subject) {
       return !person || typeof person !== "object" || Array.isArray(person);
     }));
   })) throw new Error("作業者データの形式が正しくありません。");
+  if (type === "report") {
+    ["workers","activeWorkers"].forEach(function (key) {
+      if (Array.isArray(data[key]) && data[key].some(function (worker) { return typeof worker !== "string"; })) {
+        throw new Error(key + " の要素形式が正しくありません。");
+      }
+    });
+    const stringKeys = ["id","date","content","start","end","worker"];
+    if (data.work.some(function (row) {
+      return stringKeys.some(function (key) { return key in row && typeof row[key] !== "string"; }) ||
+        ("holiday" in row && typeof row.holiday !== "boolean") ||
+        ("hours" in row && ["string","number"].indexOf(typeof row.hours) < 0) ||
+        (Array.isArray(row.people) && row.people.some(function (person) {
+          return ("worker" in person && typeof person.worker !== "string") ||
+            ("hours" in person && ["string","number"].indexOf(typeof person.hours) < 0);
+        }));
+    })) throw new Error("作業データ内の値形式が正しくありません。");
+  }
   if ("directEdits" in data && (!data.directEdits || typeof data.directEdits !== "object" || Array.isArray(data.directEdits))) {
     throw new Error("直接編集データの形式が正しくありません。");
   }
