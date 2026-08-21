@@ -998,15 +998,20 @@ function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt
 function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); }
 
 let _reportDirectEdits={};
+let _reportLegacyMigration=false;
 function reportEditableText(el){ return el&&typeof el.innerText==="string"?el.innerText:(el&&el.textContent)||""; }
 function assignReportEditKeys(){ const pages=[$("sheet"),...(($("sheetExtra")&&[...$("sheetExtra").querySelectorAll(".sheet")])||[])].filter(Boolean);
-  pages.forEach((page,pageIndex)=>page.querySelectorAll("[contenteditable]").forEach((el,index)=>{el.dataset.editKey=`page:${pageIndex}:edit:${index}`;})); }
-function captureReportDirectEdits(){ const sheet=$("sheet"); if(!sheet||sheet.querySelector(".empty"))return {..._reportDirectEdits}; assignReportEditKeys();
-  const edits={..._reportDirectEdits}; document.querySelectorAll("#sheet [data-edit-key],#sheetExtra [data-edit-key]").forEach(el=>{edits[el.dataset.editKey]=reportEditableText(el);}); _reportDirectEdits=edits; return {...edits}; }
-function restoreReportDirectEdits(){ document.querySelectorAll("#sheet [data-edit-key],#sheetExtra [data-edit-key]").forEach(el=>{const key=el.dataset.editKey;if(Object.prototype.hasOwnProperty.call(_reportDirectEdits,key))el.textContent=_reportDirectEdits[key];}); }
-function migrateLegacyReportEdits(state){ if(state&&state.directEdits&&typeof state.directEdits==="object")return {...state.directEdits};
-  if(!state||typeof state.sheetHTML!=="string")return {};
-  try{ const doc=new DOMParser().parseFromString(state.sheetHTML,"text/html"),edits={}; [...doc.querySelectorAll("[contenteditable]")].forEach((el,index)=>{edits[`page:0:edit:${index}`]=el.textContent||"";}); return edits; }catch(_){ return {}; }
+  pages.forEach((page,pageIndex)=>page.querySelectorAll("[contenteditable]").forEach((el,index)=>{ const key=`page:${pageIndex}:edit:${index}`; el.dataset.editKey=key; el.dataset.generatedValue=reportEditableText(el);
+    el.addEventListener("input",()=>{ const value=reportEditableText(el); if(value===el.dataset.generatedValue)delete _reportDirectEdits[key]; else _reportDirectEdits[key]=value; autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); });
+  })); }
+function captureReportDirectEdits(){ return {..._reportDirectEdits}; }
+function restoreReportDirectEdits(){ document.querySelectorAll("#sheet [data-edit-key],#sheetExtra [data-edit-key]").forEach(el=>{const key=el.dataset.editKey;if(!Object.prototype.hasOwnProperty.call(_reportDirectEdits,key))return;
+    if(_reportLegacyMigration&&_reportDirectEdits[key]===reportEditableText(el)){delete _reportDirectEdits[key];return;} el.textContent=_reportDirectEdits[key];});
+  _reportLegacyMigration=false;
+}
+function migrateLegacyReportEdits(state){ if(state&&state.directEdits&&typeof state.directEdits==="object"){_reportLegacyMigration=false;return {...state.directEdits};}
+  if(!state||typeof state.sheetHTML!=="string"){_reportLegacyMigration=false;return {};}
+  try{ const doc=new DOMParser().parseFromString(state.sheetHTML,"text/html"),edits={}; [...doc.querySelectorAll("[contenteditable]")].forEach((el,index)=>{edits[`page:0:edit:${index}`]=el.textContent||"";}); _reportLegacyMigration=true; return edits; }catch(_){_reportLegacyMigration=false;return {}; }
 }
 function validateReportState(state){ if(!state||typeof state!=="object"||Array.isArray(state))throw new Error("報告書データの形式ではありません。");
   const type=state.documentType||state._kkmtDocumentType||""; if(type&&type!=="report")throw new Error(type==="kkmt-customer-signature"?"サイン専用データです。サイン画面の「サイン入力」から読み込んでください。":"別の種類の書類データです。");
