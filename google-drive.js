@@ -85,6 +85,24 @@
       "people" in row && (!Array.isArray(row.people) || row.people.some(person => !person || typeof person !== "object" || Array.isArray(person))))) {
       throw new DriveError("作業者データの形式が正しくありません。");
     }
+    if (docType === "report") {
+      for (const key of ["workers","activeWorkers"]) {
+        if (Array.isArray(data[key]) && data[key].some(worker => typeof worker !== "string")) {
+          throw new DriveError(key + " の要素形式が正しくありません。");
+        }
+      }
+      const stringKeys = ["id","date","content","start","end","worker"];
+      if (data.work.some(row =>
+        stringKeys.some(key => key in row && typeof row[key] !== "string") ||
+        ("holiday" in row && typeof row.holiday !== "boolean") ||
+        ("hours" in row && !["string","number"].includes(typeof row.hours)) ||
+        (Array.isArray(row.people) && row.people.some(person =>
+          ("worker" in person && typeof person.worker !== "string") ||
+          ("hours" in person && !["string","number"].includes(typeof person.hours))
+        )))) {
+        throw new DriveError("作業データ内の値形式が正しくありません。");
+      }
+    }
     if ("directEdits" in data && (!data.directEdits || typeof data.directEdits !== "object" || Array.isArray(data.directEdits))) {
       throw new DriveError("直接編集データの形式が正しくありません。");
     }
