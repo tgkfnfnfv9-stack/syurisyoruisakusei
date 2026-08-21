@@ -131,6 +131,41 @@ assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "200" })
 result = request({
   action: "save",
   pin,
+  docType: "estimate",
+  subject: "クラッチ交換",
+  data: { fields: { subject: "クラッチ交換", mKocon: "" }, version: 5 }
+});
+assert.equal(result.ok, true);
+assert.equal(estimateFolder.files.length, 3);
+assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "200" }).result.version, 3);
+
+const current200 = request({ action: "load", pin, docType: "estimate", kocon: "200" }).result;
+result = request({
+  action: "save",
+  pin,
+  docType: "estimate",
+  kocon: "200",
+  subject: "クラッチ交換",
+  expectedRevision: current200._kkmtRevision,
+  data: { fields: { subject: "クラッチ交換", mKocon: "200" }, version: 6, _kkmtRevision: current200._kkmtRevision }
+});
+assert.equal(result.ok, true);
+const staleResult = request({
+  action: "save",
+  pin,
+  docType: "estimate",
+  kocon: "200",
+  subject: "クラッチ交換",
+  expectedRevision: current200._kkmtRevision,
+  data: { fields: { subject: "クラッチ交換", mKocon: "200" }, version: 999, _kkmtRevision: current200._kkmtRevision }
+});
+assert.equal(staleResult.ok, false);
+assert.match(staleResult.error, /CONFLICT/);
+assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "200" }).result.version, 6);
+
+result = request({
+  action: "save",
+  pin,
   docType: "report",
   kocon: "200",
   subject: "クラッチ交換",
