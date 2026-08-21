@@ -706,7 +706,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260821-10"></script>
+<script src="google-drive.js?v=20260821-11"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -956,16 +956,17 @@ async function autoLoadEstimateFromDrive({kocon,isConnected,setStatus}){
   if(!isConnected)return false;
   setStatus(`高コン「${kocon}」の見積もりを自動取得中…`);
   const estimate=await KKMTDrive.loadJson({kocon,docType:"estimate"});
-  if(!estimate){ _documentRevision=0; setStatus(`新しい見積もりです。入力内容を見積もりファイルへ自動保存します。`,"ok"); return {confirmed:true,revision:0}; }
+  if(!estimate){ setStatus(`新しい見積もりです。入力内容を見積もりファイルへ自動保存します。`,"ok"); return {confirmed:true,revision:_documentRevision,loaded:false}; }
   applyState(estimate);
   $("mKocon").value=kocon;
   setStatus("見積もりを自動取得しました。","ok");
-  return {confirmed:true,revision:_documentRevision};
+  return {confirmed:true,revision:_documentRevision,loaded:true};
 }
 
 function fileBaseName(){ const kocon=($("mKocon").value||"").trim(); const subject=($("subject").value||"件名未入力").trim(); return [...[kocon,subject].filter(Boolean),"見積もり"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
 function flushLivePreview(){ clearTimeout(_livePreviewT); renderSheet(); }
 async function buildPdf(flush=true){
+  if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();
   if(flush)flushLivePreview();
   fitSheet();
   const el=$("sheet");
@@ -986,7 +987,7 @@ async function buildPdf(flush=true){
   return {blob,name,file:new File([blob],name,{type:"application/pdf"})};
 }
 function buildStateFile(state=null,flush=true){ if(flush)flushLivePreview(); const s=state||collectState(); const name=fileBaseName()+".json"; const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"}); return {blob,name,file:new File([blob],name,{type:"application/json"})}; }
-async function buildOutputPair(){ const app=document.querySelector(".app"); const oldPointer=app.style.pointerEvents; const oldInert=app.inert; try{ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); flushLivePreview(); const snapshot=collectState(); app.style.pointerEvents="none"; app.inert=true; const pdf=await buildPdf(false); if(!pdf)return null; return {pdf,json:buildStateFile(snapshot,false)}; }finally{ app.inert=oldInert; app.style.pointerEvents=oldPointer; } }
+async function buildOutputPair(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); const app=document.querySelector(".app"); const oldPointer=app.style.pointerEvents; const oldInert=app.inert; try{ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); flushLivePreview(); const snapshot=collectState(); app.style.pointerEvents="none"; app.inert=true; const pdf=await buildPdf(false); if(!pdf)return null; return {pdf,json:buildStateFile(snapshot,false)}; }finally{ app.inert=oldInert; app.style.pointerEvents=oldPointer; } }
 function downloadBlob(blob,name,openTab){ const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>{ if(openTab){ try{ window.open(url,"_blank"); }catch(e){} } setTimeout(()=>URL.revokeObjectURL(url),60000); },800); }
 async function pcSaveOne(blob,name,mime,ext){ if(!(IS_PC && window.showSaveFilePicker)) return false;
   let h; try{ h=await window.showSaveFilePicker({suggestedName:name,types:[{description:mime,accept:{[mime]:[ext]}}]}); }
@@ -1013,12 +1014,12 @@ async function savePdfOnly(){ try{ const pdf=await buildPdf(); if(!pdf)return;
     if(await pcSaveOne(pdf.blob,pdf.name,"application/pdf",".pdf")) return;
     downloadBlob(pdf.blob,pdf.name,true);
   }catch(e){ console.error(e); alert("PDFの保存に失敗しました。もう一度お試しください。"); } }
-async function saveDataOnly(){ try{ const json=buildStateFile();
+async function saveDataOnly(){ try{ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); const json=buildStateFile();
     if(!IS_PC && navigator.canShare && navigator.canShare({files:[json.file]})){ try{ await navigator.share({files:[json.file],title:json.name}); return; }catch(err){ if(err&&err.name==="AbortError")return; } }
     if(await pcSaveOne(json.blob,json.name,"application/json",".json")) return;
     downloadBlob(json.blob,json.name,false);
   }catch(e){ console.error(e); alert("データの保存に失敗しました。もう一度お試しください。"); } }
-function doPrint(){ flushLivePreview(); const sheet=$("sheet"); if(!sheet)return; fitSheet();
+async function doPrint(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); flushLivePreview(); const sheet=$("sheet"); if(!sheet)return; fitSheet();
   sheet.style.zoom=""; const sw=sheet.offsetWidth||1123, sh=sheet.offsetHeight||760;
   const pxW=(297-12)*96/25.4, pxH=(210-12)*96/25.4; // A4横・余白6mmの印刷可能領域(px概算)
   let z=Math.min(pxW/sw, pxH/sh, 1); z=Math.max(0.3, z*0.97); // 安全係数で確実に1ページ
