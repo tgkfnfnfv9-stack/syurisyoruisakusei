@@ -141,12 +141,28 @@ function validateDocumentData_(data, docType, kocon, subject) {
   const dataType = String(data.documentType || data._kkmtDocumentType || "");
   if (dataType && dataType !== type) throw new Error("別の種類の書類データは保存できません。");
   if (type === "report" && !Array.isArray(data.work)) throw new Error("報告書の作業データが不足しています。");
-  const arrays = type === "report"
-    ? ["parts","customs","lodges","work","workers","activeWorkers"]
+  const objectArrays = type === "report"
+    ? ["parts","customs","lodges","work"]
     : ["parts","customs","lodges","wdays"];
+  const arrays = type === "report"
+    ? objectArrays.concat(["workers","activeWorkers"])
+    : objectArrays.concat(["excludedItemKeys"]);
   arrays.forEach(function (key) {
     if (key in data && !Array.isArray(data[key])) throw new Error(key + " の形式が正しくありません。");
   });
+  objectArrays.forEach(function (key) {
+    if (Array.isArray(data[key]) && data[key].some(function (item) {
+      return !item || typeof item !== "object" || Array.isArray(item);
+    })) throw new Error(key + " の項目形式が正しくありません。");
+  });
+  if (type === "report" && data.work.some(function (row) {
+    return "people" in row && (!Array.isArray(row.people) || row.people.some(function (person) {
+      return !person || typeof person !== "object" || Array.isArray(person);
+    }));
+  })) throw new Error("作業者データの形式が正しくありません。");
+  if ("directEdits" in data && (!data.directEdits || typeof data.directEdits !== "object" || Array.isArray(data.directEdits))) {
+    throw new Error("直接編集データの形式が正しくありません。");
+  }
   const fieldsKocon = normalize_(data.fields.mKocon || data.fields.estNo);
   const fieldsSubject = normalize_(data.fields.subject);
   if (normalize_(kocon) !== fieldsKocon) throw new Error("高コン番号と保存データが一致しません。");
