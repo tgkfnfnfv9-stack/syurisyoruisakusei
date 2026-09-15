@@ -182,6 +182,19 @@
     }
   }
 
+  function readJsonFile(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new global.FileReader();
+      reader.onload = () => {
+        try { resolve(JSON.parse(reader.result)); }
+        catch (_) { reject(new DriveError("JSONデータを読み取れませんでした。保存したデータファイルを選んでください。")); }
+      };
+      reader.onerror = () => reject(new DriveError("ファイルを読み取れませんでした。もう一度選び直してください。"));
+      reader.onabort = () => reject(new DriveError("ファイルの読み込みを中止しました。"));
+      reader.readAsText(file);
+    });
+  }
+
   function clearSessionToken() {
     accessToken = "";
     accessTokenExpiresAt = 0;
@@ -829,6 +842,8 @@
     let commitPromise = null;
     let skipPagehideSave = false;
     let syncPromise = null;
+    let documentEpoch = 0;
+    let loading = false;
 
     function setStatus(message, state) {
       if (!statusElement) return;
@@ -849,13 +864,15 @@
     }
 
     async function saveLoop() {
+      if (loading) return;
       if (syncPromise) {
         await syncPromise.catch(() => {});
         return saveLoop();
       }
       if (savingPromise) return savingPromise;
+      const epoch = documentEpoch;
       savingPromise = (async () => {
-        while (saveRequested) {
+        while (saveRequested && epoch === documentEpoch && !loading) {
           saveRequested = false;
           const current = snapshot();
           const currentKey = snapshotKey(current);
@@ -895,6 +912,7 @@
               data: current.data,
               expectedRevision: current.expectedRevision
             });
+            if (epoch !== documentEpoch) break;
             activeRevision = Number(result && result.revision);
             if (!Number.isSafeInteger(activeRevision) || activeRevision < 0) activeRevision = current.expectedRevision + 1;
             if (onSavedRevision) await onSavedRevision(activeRevision);
@@ -911,6 +929,7 @@
             }).format(new Date());
             setStatus(`${label}を自動保存しました ${time}`, "ok");
           } catch (error) {
+            if (epoch !== documentEpoch) break;
             if (!skipPagehideSave) storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json, current.expectedRevision);
             if (error instanceof DriveError && error.status === 401) {
               connectButton.textContent = "共通Driveに接続";
@@ -931,6 +950,7 @@
     }
 
     function markDirty({ immediate = false } = {}) {
+      if (loading) return null;
       saveRequested = true;
       clearTimeout(timer);
       if (immediate) return saveLoop();
@@ -949,7 +969,11 @@
     }
 
     async function confirmCurrentKocon({ save = true } = {}) {
+      if (loading) return false;
+      const epoch = documentEpoch;
+      const isCurrent = () => epoch === documentEpoch && !loading;
       if (syncPromise) await syncPromise.catch(() => {});
+      if (!isCurrent()) return false;
       if (commitPromise) return commitPromise;
       commitPromise = (async () => {
         const next = normalizeKocon(koconInput.value);
@@ -972,15 +996,19 @@
           }
 
           if (onIdentityChanging) await onIdentityChanging({ previous, next });
+          if (!isCurrent()) return false;
           identityHookRan = true;
           clearTimeout(timer);
           if (savingPromise) await savingPromise;
+          if (!isCurrent()) return false;
           koconInput.value = previous;
           await markDirty({ immediate: true });
+          if (!isCurrent()) return false;
           koconInput.value = next;
         }
 
         if (next !== previous && !identityHookRan && onIdentityChanging) await onIdentityChanging({ previous, next });
+        if (!isCurrent()) return false;
         activeKocon = next;
         if (next !== previous) {
           confirmedKocon = "";
@@ -1012,8 +1040,10 @@
             const confirmation = await onKoconConfirmed({
               kocon: next,
               isConnected: true,
-              setStatus
+              setStatus: (message, state) => { if (isCurrent()) setStatus(message, state); },
+              isCurrent
             });
+            if (!isCurrent()) return false;
             confirmed = confirmation !== false;
             loadedExisting = !!(confirmation && confirmation.loaded);
             if (confirmed) {
@@ -1024,10 +1054,11 @@
               if (onSavedRevision) await onSavedRevision(activeRevision);
             }
           } catch (error) {
+            if (!isCurrent()) return false;
             console.error("Kocon confirmation failed", error);
             setStatus(`${label}データの確認に失敗しました。`, "error");
           } finally {
-            koconInput.disabled = false;
+            if (isCurrent()) koconInput.disabled = false;
           }
           if (!confirmed) {
             koconInput.value = previous;
@@ -1068,6 +1099,58 @@
       return save ? markDirty({ immediate: true }) : Promise.resolve();
     }
 
+    async function loadDocument({ load, apply, message, synced = false }) {
+      if (loading) return false;
+      const previous = snapshot();
+      // Preserve the outgoing draft without waiting for network I/O.
+      if (snapshotKey(previous) && lastSavedJson.get(snapshotKey(previous)) !== previous.json) {
+        if (!storePending(docType, previous.kocon, previous.subject, previous.previousSubject,
+            previous.data, previous.json, previous.expectedRevision)) {
+          throw new DriveError("現在の入力を端末内に保管できません。データ保存で控えを保存してから読み込んでください。");
+        }
+      }
+      loading = true;
+      ++documentEpoch;
+      skipNextInitialLoad = false;
+      saveRequested = false;
+      clearTimeout(timer);
+      const wasInert = root.inert;
+      root.inert = true;
+      koconInput.disabled = false;
+      setStatus("データを読み込み中…");
+      let applying = false;
+      try {
+        if (onIdentityChanging) await onIdentityChanging({ previous: activeKocon });
+        // A Drive read must follow writes already in flight. Local files do not
+        // depend on those requests and are applied immediately.
+        if (synced) {
+          await Promise.all([savingPromise, syncPromise].filter(Boolean).map(promise => promise.catch(() => {})));
+        }
+        const data = await load();
+        // apply must validate before changing the form and complete synchronously.
+        applying = true;
+        apply(data);
+        lastSavedJson.clear();
+        await adoptCurrentKocon({ confirmed: true, save: false });
+        if (synced) {
+          const current = snapshot();
+          lastSavedJson.set(snapshotKey(current), current.json);
+        }
+        setStatus(message || "データを読み込みました。", "ok");
+        return true;
+      } catch (error) {
+        if (applying && options.restoreState) {
+          options.restoreState(previous.data);
+          await adoptCurrentKocon({ save: false, revision: previous.expectedRevision });
+        }
+        setStatus(error.message || "読み込みに失敗しました。", "error");
+        throw error;
+      } finally {
+        root.inert = wasInert;
+        loading = false;
+      }
+    }
+
     async function resumeIdentity() {
       if (skipNextInitialLoad) {
         skipNextInitialLoad = false;
@@ -1101,6 +1184,7 @@
 
     function synchronizePending(initialize = false) {
       if (syncPromise) return syncPromise;
+      const epoch = documentEpoch;
       const runningSave = savingPromise;
       syncPromise = (async () => {
         if (runningSave) await runningSave;
@@ -1108,7 +1192,7 @@
         else await connect();
         if (!isConnected()) return [];
         const results = await flushPending(docType);
-        await adoptFlushedRevision(results);
+        if (epoch === documentEpoch) await adoptFlushedRevision(results);
         return results;
       })().finally(() => { syncPromise = null; });
       return syncPromise;
@@ -1121,10 +1205,13 @@
     }
 
     async function handleConnect() {
+      if (loading) return;
+      const epoch = documentEpoch;
       setStatus("共通Driveへ接続中…");
       connectButton.disabled = true;
       try {
         const results = await synchronizePending();
+        if (epoch !== documentEpoch) return;
         connectButton.textContent = "共通Drive接続済み";
         setStatus("共通Driveへ接続しました。未同期データを確認中…", "ok");
         const failures = results.filter(result => !result.ok);
@@ -1138,6 +1225,7 @@
         }
         await resumeIdentity();
       } catch (error) {
+        if (epoch !== documentEpoch) return;
         console.error("Central Drive connection failed", error);
         setStatus("共通Driveへ接続できません。通信環境を確認して、もう一度お試しください。", "error");
       } finally {
@@ -1163,8 +1251,10 @@
       }
 
       connectButton.disabled = true;
+      const epoch = documentEpoch;
       synchronizePending(true).then(async results => {
         connectButton.disabled = false;
+        if (epoch !== documentEpoch) return;
         if (!isConnected()) {
           connectButton.textContent = "共通Driveに接続";
           setStatus("共通Drive未接続");
@@ -1183,6 +1273,8 @@
         }
         await resumeIdentity();
       }).catch(error => {
+        connectButton.disabled = false;
+        if (epoch !== documentEpoch) return;
         console.error("Central Drive failed to initialize", error);
         connectButton.disabled = false;
         connectButton.textContent = "共通Driveに接続";
@@ -1258,6 +1350,7 @@
       whenIdle,
       confirmCurrentKocon,
       adoptCurrentKocon,
+      loadDocument,
       discardCurrent,
       setStatus,
       getActiveKocon: () => activeKocon
@@ -1274,6 +1367,7 @@
     isConnected,
     findDocument,
     loadJson,
+    readJsonFile,
     saveJson,
     flushPending,
     createAutosaveController

@@ -847,7 +847,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260915-1"></script>
+<script src="google-drive.js?v=20260915-2"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1049,6 +1049,7 @@ function newReportRowId(){ return "work_"+Date.now().toString(36)+"_"+Math.rando
 function syncSameState(copyValues=true){ const same=$("sameAsSite").checked; $("siteWrap").style.display=same?"none":"block"; if(same&&copyValues){ $("siteName").value=$("billName").value; $("address").value=$("billAddr").value; $("siteTel").value=$("billTel").value; } }
 const SIMPLE_IDS=["client","subject","workDate","address","directUse","d_km","d_h","d_toll","d_trans","d_trav","d_ktoll","b1_use","b1_mode","b1_km","b1_h","b1_toll","b1_people","b1_vehicles","b1_tripsWd","b1_we","b1_tripsWe","b2_use","b2_mode","b2_km","b2_h","b2_toll","b2_people","b2_vehicles","b2_tripsWd","b2_we","b2_tripsWe","b3_use","b3_mode","b3_addr","b3_km","b3_h","b3_toll","b3_people","b3_vehicles","b3_tripsWd","b3_we","b3_tripsWe","daysWd","workWE","daysWe","hoursPerDay","nightHours","workFee","nightsWd","lodgeWE","nightsWe","lodgeUnit","lodgePeople","lodgePeopleWd","lodgePeopleWe","repDate","mMaker","mType","mNo","mYear","mKocon","billTel","billPerson","billName","billAddr","siteName","siteTel","sameAsSite","trouble","cause","action","custSupply","payDate","doneComplete","doneIncomplete"];
 let _documentRevision=0;
+const initialFieldValues={};
 function collectState(){ const s={documentType:"report",schemaVersion:2,_kkmtRevision:_documentRevision,fields:{},parts:partRowsRaw(),customs:customRowsRaw(),lodges:lodgeRows(),work:getWorkRows(),workers:WORKERS,activeWorkers:ACTIVE.slice(),signature:sigDataURL,directEdits:captureReportDirectEdits()}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); return s; }
 function fileBaseName(){ const kocon=(($("mKocon")&&$("mKocon").value)||"").trim();
   const company=($("billName").value.trim()||$("client").value.trim()||"作業報告書");
@@ -1062,7 +1063,7 @@ async function saveState(){ if(driveAutosaveController&&driveAutosaveController.
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>{ try{ window.open(url,"_blank"); }catch(e){} setTimeout(()=>URL.revokeObjectURL(url),60000); },800); }
-function applyState(raw){ if(!raw)return; const s=validateReportState(raw); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo;
+function applyState(raw){ if(!raw)return; const s=validateReportState(raw); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); const fields={...initialFieldValues,...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo;
   const workRows=normalizeWorkRows(s.work); const incomingWorkers=Array.isArray(s.workers)?s.workers:[]; const workWorkers=workRows.flatMap(w=>w.people.map(p=>p.worker).filter(Boolean));
   WORKERS=[...new Set([...DEFAULT_WORKERS,...WORKERS,...incomingWorkers,...workWorkers])]; saveWorkers();
   ACTIVE = (Array.isArray(s.activeWorkers)&&s.activeWorkers.length) ? s.activeWorkers.filter(w=>WORKERS.includes(w)) : [...new Set(workWorkers)];
@@ -1080,6 +1081,7 @@ const DRAFT_KEY="kkmt_report_draft";
 let _autosaveT=null;
 function writeLocalDraftNow(){ clearTimeout(_autosaveT); _autosaveT=null; try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } }
 function cancelLocalAutosave(){ clearTimeout(_autosaveT); _autosaveT=null; }
+function cancelPendingFormUpdates(){ cancelLocalAutosave(); clearTimeout(_livePreviewT); }
 function autosave(){ cancelLocalAutosave(); _autosaveT=setTimeout(writeLocalDraftNow,400); }
 function autosaveFromEvent(event){ const target=event&&event.target; if(target&&target.type==="file")return; autosave(); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
@@ -1095,23 +1097,26 @@ async function searchReportFromDrive(){
   if(!confirm(`${label}の保存済み報告書を取得し、現在の入力内容を置き換えますか？`))return;
   driveAutosaveController.setStatus("報告書を共通Driveから検索中…");
   try{
-    const report=await KKMTDrive.loadJson(byKocon?{kocon:term,docType:"report"}:{subject:term,docType:"report"});
-    if(!report){ driveAutosaveController.setStatus(`${label}の報告書が見つかりません。`,"error"); return; }
-    applyState(report);
-    if(byKocon&&!$("mKocon").value)$("mKocon").value=term;
-    if(!byKocon&&!$("subject").value)$("subject").value=term;
-    await driveAutosaveController.adoptCurrentKocon({confirmed:!!$("mKocon").value,save:false});
-    driveAutosaveController.setStatus(`${label}の報告書を取得しました。`,"ok");
+    await driveAutosaveController.loadDocument({
+      load:async()=>{
+        const data=await KKMTDrive.loadJson(byKocon?{kocon:term,docType:"report"}:{subject:term,docType:"report"});
+        if(!data)throw new Error(`${label}の報告書が見つかりません。`);
+        return validateReportState(data);
+      },
+      apply:data=>{applyState(data);if(byKocon&&!$("mKocon").value)$("mKocon").value=term;if(!byKocon&&!$("subject").value)$("subject").value=term;},
+      synced:true, message:`${label}の報告書を取得しました。`
+    });
   }catch(error){
     console.error("Report load failed",error);
     driveAutosaveController.setStatus("報告書を取得できませんでした。","error");
   }
 }
 
-async function autoLoadReportFromDrive({kocon,isConnected,setStatus}){
+async function autoLoadReportFromDrive({kocon,isConnected,setStatus,isCurrent=()=>true}){
   if(!isConnected)return false;
   setStatus(`高コン「${kocon}」の報告書を自動取得中…`);
   const report=await KKMTDrive.loadJson({kocon,docType:"report"});
+  if(!isCurrent())return false;
   if(!report){ _documentRevision=0; setStatus(`新しい報告書です。入力内容を報告書ファイルへ自動保存します。`,"ok"); return {confirmed:true,revision:0,loaded:false}; }
   applyState(report);
   $("mKocon").value=kocon;
@@ -1126,12 +1131,11 @@ async function importEstimateFromDrive(){
   if(!confirm(`高コン「${kocon}」の見積書を取り込み、現在の報告書入力を置き換えますか？`))return;
   driveAutosaveController.setStatus("見積書を共通Driveから取得中…");
   try{
-    const estimate=await KKMTDrive.loadJson({kocon,docType:"estimate"});
-    if(!estimate){ driveAutosaveController.setStatus(`高コン「${kocon}」の見積書が見つかりません。`,"error"); return; }
-    if(!importEstimate(estimate,true)){ driveAutosaveController.setStatus("見積書を取り込めませんでした。","error"); return; }
-    $("mKocon").value=kocon;
-    await driveAutosaveController.adoptCurrentKocon({confirmed:true});
-    driveAutosaveController.setStatus("見積書を報告書へ取り込みました。§8の作業者を確認してください。","ok");
+    await driveAutosaveController.loadDocument({
+      load:async()=>{const data=await KKMTDrive.loadJson({kocon,docType:"estimate"});if(!data)throw new Error(`高コン「${kocon}」の見積書が見つかりません。`);return validateImportedEstimate(data);},
+      apply:data=>{if(!importEstimate(data,true))throw new Error("見積書を取り込めませんでした。");$("mKocon").value=kocon;},
+      message:"見積書を報告書へ取り込みました。§8の作業者を確認してください。共通Driveは上書きしていません。"
+    });
   }catch(error){
     console.error("Estimate import failed",error);
     driveAutosaveController.setStatus("見積書を取得できませんでした。","error");
@@ -1420,8 +1424,23 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("apiKey").addEventListener("change",()=>{ try{localStorage.setItem("kkmt_gkey",$("apiKey").value.trim());}catch{} });
   $("saveBtn").addEventListener("click",saveState); $("loadBtn").addEventListener("click",()=>$("loadFile").click());
   $("estBtn").addEventListener("click",()=>$("estFile").click());
-  $("estFile").addEventListener("change",e=>{ e.stopPropagation(); clearTimeout(_livePreviewT); const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのは見積データ（.json）です。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=async()=>{ try{ const estimate=validateImportedEstimate(JSON.parse(rd.result)); if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); if(importEstimate(estimate,true)){ autosave(); if(driveAutosaveController){await driveAutosaveController.adoptCurrentKocon({confirmed:true,save:false});driveAutosaveController.setStatus("端末の見積データを取り込みました。共通Driveは上書きしていません。","ok");} } }catch(err){alert("取り込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
-  $("loadFile").addEventListener("change",e=>{ e.stopPropagation(); clearTimeout(_livePreviewT); const f=e.target.files[0]; if(!f)return; const isJson=/\.json$/i.test(f.name)||f.type==="application/json"; if(!isJson){ alert("読み込めるのは報告書データ（.json）です。PDFは読み込めません。"); e.target.value=""; return; } const rd=new FileReader(); rd.onload=async()=>{ try{ const report=validateReportState(JSON.parse(rd.result)); if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); applyState(report); autosave(); if(driveAutosaveController){await driveAutosaveController.adoptCurrentKocon({confirmed:true,save:false});driveAutosaveController.setStatus("端末の報告書データを読み込みました。共通Driveは上書きしていません。","ok");} }catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
+  $("estFile").addEventListener("change",async e=>{
+    e.stopPropagation();const f=e.target.files[0];e.target.value="";if(!f)return;
+    if(!/\.json$/i.test(f.name)&&f.type!=="application/json"){alert("読み込めるのは見積データ（.json）です。");return;}
+    try{await driveAutosaveController.loadDocument({
+      load:async()=>validateImportedEstimate(await KKMTDrive.readJsonFile(f)),
+      apply:data=>{if(!importEstimate(data,true))throw new Error("見積書を取り込めませんでした。");},
+      message:"端末の見積データを取り込みました。共通Driveは上書きしていません。"
+    });}catch(err){alert("取り込み失敗："+err.message);}
+  });
+  $("loadFile").addEventListener("change",async e=>{
+    e.stopPropagation(); const f=e.target.files[0]; e.target.value=""; if(!f)return;
+    if(!/\.json$/i.test(f.name)&&f.type!=="application/json"){alert("読み込めるのは報告書データ（.json）です。");return;}
+    try{ await driveAutosaveController.loadDocument({
+      load:async()=>validateReportState(await KKMTDrive.readJsonFile(f)), apply:applyState,
+      message:"端末の報告書データを読み込みました。共通Driveは上書きしていません。"
+    }); }catch(err){alert("読み込み失敗："+err.message);}
+  });
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   document.querySelectorAll(".we-toggle").forEach(cb=>cb.addEventListener("change",syncWE));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow());
@@ -1532,6 +1551,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   ["d_km","d_h","d_toll"].forEach(id=>$(id).addEventListener("input",syncDirectAmounts));
   ["d_trans","d_trav","d_ktoll"].forEach(id=>$(id).addEventListener("input",()=>{ const el=$(id); el.dataset.edited=el.value.trim()===""?"":"1"; }));
   syncWE(); syncBase(); refreshDirect();
+  SIMPLE_IDS.forEach(id=>{const el=$(id);if(el)initialFieldValues[id]=el.type==="checkbox"?el.checked:el.value;});
   const restoredDraft=restoreDraft();
   if($("sheet").querySelector(".empty"))renderReport();
   const liveForm=document.querySelector(".form");
@@ -1547,8 +1567,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     statusElement:$("driveStatus"),
     connectButton:$("driveConnectBtn"),
     collectState,
+    restoreState:applyState,
     onKoconConfirmed:autoLoadReportFromDrive,
-    onIdentityChanging:cancelLocalAutosave,
+    onIdentityChanging:cancelPendingFormUpdates,
     onIdentityChanged:writeLocalDraftNow,
     onSavedRevision:revision=>{ _documentRevision=revision; writeLocalDraftNow(); },
     skipInitialLoad:restoredDraft

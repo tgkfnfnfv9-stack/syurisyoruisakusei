@@ -706,7 +706,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260915-1"></script>
+<script src="google-drive.js?v=20260915-2"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -911,8 +911,9 @@ function validateEstimateState(s){ if(!s||typeof s!=="object"||Array.isArray(s))
   return s;
 }
 let _documentRevision=0;
+const initialFieldValues={};
 function collectState(){ const directEdits=captureDirectEdits(); const s={documentType:"estimate",schemaVersion:2,_kkmtRevision:_documentRevision,fields:{},parts:partRowsRaw(),customs:customRowsRaw(),wdays:wdayRows(),lodges:lodgeRows(),directEdits,excludedItemKeys:[..._excludedItemKeys]}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); return s; }
-function applyState(raw){ if(!raw)return; const s=validateEstimateState(raw); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); setDirectEdits(migrateLegacyDirectEdits(s)); _excludedItemKeys=new Set(Array.isArray(s.excludedItemKeys)?s.excludedItemKeys.map(String):[]); const fields={...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
+function applyState(raw){ if(!raw)return; const s=validateEstimateState(raw); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); setDirectEdits(migrateLegacyDirectEdits(s)); _excludedItemKeys=new Set(Array.isArray(s.excludedItemKeys)?s.excludedItemKeys.map(String):[]); const fields={...initialFieldValues,...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("wdList").innerHTML=""; (s.wdays&&s.wdays.length?s.wdays:[null]).forEach(w=>addWdayRow(w));
@@ -924,6 +925,7 @@ const DRAFT_KEY="kkmt_est_draft";
 let _autosaveT=null;
 function writeLocalDraftNow(){ clearTimeout(_autosaveT); _autosaveT=null; try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } }
 function cancelLocalAutosave(){ clearTimeout(_autosaveT); _autosaveT=null; }
+function cancelPendingFormUpdates(){ cancelLocalAutosave(); clearTimeout(_livePreviewT); }
 function autosave(){ cancelLocalAutosave(); _autosaveT=setTimeout(writeLocalDraftNow,400); }
 function autosaveFromEvent(event){ const target=event&&event.target; if(target&&target.type==="file")return; autosave(); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
@@ -939,23 +941,26 @@ async function searchEstimateFromDrive(){
   if(!confirm(`${label}の保存済み見積もりを取得し、現在の入力内容を置き換えますか？`))return;
   if(driveAutosaveController)driveAutosaveController.setStatus("見積もりを共通Driveから検索中…");
   try{
-    const estimate=await KKMTDrive.loadJson(byKocon?{kocon:term,docType:"estimate"}:{subject:term,docType:"estimate"});
-    if(!estimate){ driveAutosaveController.setStatus(`${label}の見積もりが見つかりません。`,"error"); return; }
-    applyState(estimate);
-    if(byKocon&&!$("mKocon").value)$("mKocon").value=term;
-    if(!byKocon&&!$("subject").value)$("subject").value=term;
-    await driveAutosaveController.adoptCurrentKocon({confirmed:!!$("mKocon").value,save:false});
-    driveAutosaveController.setStatus(`${label}の見積もりを取得しました。`,"ok");
+    await driveAutosaveController.loadDocument({
+      load:async()=>{
+        const data=await KKMTDrive.loadJson(byKocon?{kocon:term,docType:"estimate"}:{subject:term,docType:"estimate"});
+        if(!data)throw new Error(`${label}の見積もりが見つかりません。`);
+        return validateEstimateState(data);
+      },
+      apply:data=>{applyState(data);if(byKocon&&!$("mKocon").value)$("mKocon").value=term;if(!byKocon&&!$("subject").value)$("subject").value=term;},
+      synced:true, message:`${label}の見積もりを取得しました。`
+    });
   }catch(error){
     console.error("Estimate load failed",error);
     driveAutosaveController.setStatus("見積もりを取得できませんでした。","error");
   }
 }
 
-async function autoLoadEstimateFromDrive({kocon,isConnected,setStatus}){
+async function autoLoadEstimateFromDrive({kocon,isConnected,setStatus,isCurrent=()=>true}){
   if(!isConnected)return false;
   setStatus(`高コン「${kocon}」の見積もりを自動取得中…`);
   const estimate=await KKMTDrive.loadJson({kocon,docType:"estimate"});
+  if(!isCurrent())return false;
   if(!estimate){ setStatus(`新しい見積もりです。入力内容を見積もりファイルへ自動保存します。`,"ok"); return {confirmed:true,revision:_documentRevision,loaded:false}; }
   applyState(estimate);
   $("mKocon").value=kocon;
@@ -1034,13 +1039,21 @@ document.addEventListener("DOMContentLoaded",()=>{
   try{ const k=localStorage.getItem("kkmt_gkey"); if(k)$("apiKey").value=k; }catch{}
   $("apiKey").addEventListener("change",()=>{ try{localStorage.setItem("kkmt_gkey",$("apiKey").value.trim());}catch{} });
   $("loadBtn").addEventListener("click",()=>$("loadFile").click());
-  $("loadFile").addEventListener("change",e=>{ e.stopPropagation(); clearTimeout(_livePreviewT); const f=e.target.files[0]; if(!f)return; const rd=new FileReader(); rd.onload=async()=>{ try{ const state=validateEstimateState(JSON.parse(rd.result)); if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); applyState(state); autosave(); if(driveAutosaveController){ await driveAutosaveController.adoptCurrentKocon({confirmed:true,save:false}); driveAutosaveController.setStatus("端末の見積データを読み込みました。共通Driveは上書きしていません。","ok"); } }catch(err){alert("読み込み失敗："+err.message);} }; rd.readAsText(f); e.target.value=""; });
+  $("loadFile").addEventListener("change",async e=>{
+    e.stopPropagation(); const f=e.target.files[0]; e.target.value=""; if(!f)return;
+    if(!/\.json$/i.test(f.name)&&f.type!=="application/json"){alert("読み込めるのは見積データ（.json）です。");return;}
+    try{ await driveAutosaveController.loadDocument({
+      load:async()=>validateEstimateState(await KKMTDrive.readJsonFile(f)), apply:applyState,
+      message:"端末の見積データを読み込みました。共通Driveは上書きしていません。"
+    }); }catch(err){alert("読み込み失敗："+err.message);}
+  });
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   $("tollSearch").addEventListener("click",()=>window.open("https://www.driveplaza.com/dp/SearchTop","_blank"));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow()); $("addWday").addEventListener("click",()=>addWdayRow()); $("addLodge").addEventListener("click",()=>{ addLodgeRow(); refreshLodge(); });
   $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth); $("pdfBtn").addEventListener("click",savePdfOnly); $("dataBtn").addEventListener("click",saveDataOnly);
   (function initDevMode(){ let saved=null; try{ saved=localStorage.getItem("kkmt_devmode"); }catch(e){} const guess=(navigator.canShare && matchMedia("(pointer:coarse)").matches)?"mobile":"pc"; $("devMode").value=(saved==="pc"||saved==="mobile")?saved:guess; applyDeviceMode(); $("devMode").addEventListener("change",applyDeviceMode); })();
   syncWE(); syncBase();
+  SIMPLE_IDS.forEach(id=>{const el=$(id);if(el)initialFieldValues[id]=el.type==="checkbox"?el.checked:el.value;});
   const restoredDraft=restoreDraft();
   if($("sheet").querySelector(".empty"))renderSheet();
   const liveForm=document.querySelector(".form");
@@ -1056,8 +1069,9 @@ document.addEventListener("DOMContentLoaded",()=>{
     statusElement:$("driveStatus"),
     connectButton:$("driveConnectBtn"),
     collectState,
+    restoreState:applyState,
     onKoconConfirmed:autoLoadEstimateFromDrive,
-    onIdentityChanging:cancelLocalAutosave,
+    onIdentityChanging:cancelPendingFormUpdates,
     onIdentityChanged:writeLocalDraftNow,
     onSavedRevision:revision=>{ _documentRevision=revision; writeLocalDraftNow(); },
     skipInitialLoad:restoredDraft
