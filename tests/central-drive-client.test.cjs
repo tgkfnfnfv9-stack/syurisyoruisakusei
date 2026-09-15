@@ -6,6 +6,10 @@ const vm = require("node:vm");
 const records = [];
 const clone = value => JSON.parse(JSON.stringify(value));
 const normalize = value => String(value == null ? "" : value).trim();
+let loadTransform = data => data;
+let beforePost = async () => {};
+let afterPost = () => {};
+let postCount = 0;
 
 function findRecord(docType, kocon, subject) {
   const normalizedKocon = normalize(kocon);
@@ -46,7 +50,7 @@ const head = {
         url.searchParams.get("kocon"),
         url.searchParams.get("subject")
       );
-      response = { ok: true, result: record ? clone(record.data) : null };
+      response = { ok: true, result: loadTransform(record ? clone(record.data) : null) };
     } else {
       response = { ok: false, error: "不明な操作です。" };
     }
@@ -70,6 +74,8 @@ async function centralFetch(url, options = {}) {
   assert.equal(options.mode, "no-cors");
   assert.equal(options.credentials, "include");
   const request = JSON.parse(options.body);
+  postCount += 1;
+  await beforePost(request);
   assert.equal(request.pin, "ad5d1bc7");
   assert.equal(request.action, "save");
 
@@ -105,6 +111,7 @@ async function centralFetch(url, options = {}) {
     _kkmtRevision: existingRevision + 1,
     _kkmtUpdatedAt: new Date().toISOString()
   });
+  afterPost(request);
   return { type: "opaque" };
 }
 
@@ -268,6 +275,87 @@ vm.runInNewContext(
   const makeStatus = () => ({ textContent: "", classList: { toggle() {} } });
   const makeButton = () => ({ textContent: "", disabled: false, addEventListener() {} });
   const waitForAsyncInit = () => new Promise(resolve => setTimeout(resolve, 60));
+
+  // Real JSON round-trips may reorder object keys; array order still matters.
+  const reorder = value => Array.isArray(value) ? value.map(reorder)
+    : value && typeof value === "object"
+      ? Object.fromEntries(Object.entries(value).reverse().map(([key, child]) => [key, reorder(child)]))
+      : value;
+  loadTransform = reorder;
+  const orderedData = { fields: { mKocon: "ordered", subject: "順序" }, wdays: [{ a: 1, b: 2 }] };
+  const orderedSave = await drive.saveJson({ kocon: "ordered", subject: "順序", docType: "estimate", data: orderedData, expectedRevision: 0 });
+  assert.equal(orderedSave.revision, 1);
+  loadTransform = data => data;
+
+  // A stale pending item identical to the latest content is already synchronized.
+  await drive.saveJson({ kocon: "ordered", subject: "順序", docType: "estimate", data: orderedData, expectedRevision: 1 });
+  const recovered = await drive.saveJson({ kocon: "ordered", subject: "順序", docType: "estimate", data: orderedData, expectedRevision: 0 });
+  assert.equal(recovered.revision, 2);
+  assert.equal(findRecord("estimate", "ordered", "").data._kkmtRevision, 2);
+  await assert.rejects(() => drive.saveJson({ kocon: "ordered", subject: "順序", docType: "estimate", data: { ...orderedData, wdays: [{ a: 2, b: 1 }] }, expectedRevision: 0 }), error => error.status === 409);
+
+  // POST is sent once; a temporarily stale verification read is retried.
+  let staleReads = 1;
+  loadTransform = data => data && data.fields.mKocon === "delayed" && staleReads-- > 0 ? null : data;
+  const beforeDelayed = postCount;
+  await drive.saveJson({ kocon: "delayed", subject: "遅延", docType: "report", data: { fields: { mKocon: "delayed", subject: "遅延" }, work: [] }, expectedRevision: 0 });
+  assert.equal(postCount, beforeDelayed + 1);
+  loadTransform = data => data;
+
+  // Mutating a shared form array after POST must not change the verification snapshot.
+  const mutable = { fields: { mKocon: "mutable", subject: "入力中" }, work: [], workers: ["A"] };
+  afterPost = () => { mutable.workers.push("B"); };
+  await drive.saveJson({ kocon: "mutable", subject: "入力中", docType: "report", data: mutable, expectedRevision: 0 });
+  afterPost = () => {};
+  assert.deepEqual(findRecord("report", "mutable", "").data.workers, ["A"]);
+
+  // An opaque POST that never saved is not evidence of another device's edit.
+  loadTransform = data => data && data.fields.mKocon === "unverified" ? null : data;
+  await assert.rejects(() => drive.saveJson({ kocon: "unverified", subject: "未確認", docType: "estimate", data: { fields: { mKocon: "unverified", subject: "未確認" }, wdays: [] }, expectedRevision: 0 }), error => error.status === 503);
+  loadTransform = data => data;
+
+  // Startup pending flush and current edits must not POST the same base revision concurrently.
+  for (const docType of ["estimate", "report"]) {
+    const id = "startup-" + docType;
+    const key = "kkmt_drive_pending_" + docType + "_k_" + id;
+    let state = { fields: { mKocon: id, subject: "起動中" }, ...(docType === "report" ? { work: [] } : { wdays: [] }), _kkmtRevision: 0, version: 1 };
+    localStorage.setItem(key, JSON.stringify({ docType, kocon: id, subject: "起動中", expectedRevision: 0, json: JSON.stringify(state) }));
+    let release;
+    let started;
+    const entered = new Promise(resolve => { started = resolve; });
+    const blocked = new Promise(resolve => { release = resolve; });
+    let calls = 0;
+    beforePost = async request => { if (request.kocon === id && ++calls === 1) { started(); await blocked; } };
+    const startupController = drive.createAutosaveController({
+      docType, rootElement: { addEventListener() {} }, koconInput: makeInput(id), fallbackInput: makeInput("起動中"),
+      statusElement: makeStatus(), connectButton: makeButton(), collectState: () => clone(state),
+      onSavedRevision: revision => { state._kkmtRevision = revision; }, skipInitialLoad: true
+    }).init();
+    await entered;
+    state.version = 2;
+    const savingEdit = startupController.markDirty({ immediate: true });
+    await new Promise(resolve => setTimeout(resolve, 10));
+    assert.equal(calls, 1);
+    release();
+    await savingEdit;
+    await startupController.whenIdle();
+    assert.equal(findRecord(docType, id, "").data.version, 2);
+    assert.equal(state._kkmtRevision, 2);
+    assert.equal(localStorage.getItem(key), null);
+    beforePost = async () => {};
+  }
+
+  // A pending entry replaced while its old value is in flight must survive.
+  const replacedKey = "kkmt_drive_pending_report_k_replaced";
+  const replacedItem = { docType: "report", kocon: "replaced", subject: "保持", expectedRevision: 0, json: JSON.stringify({ fields: { mKocon: "replaced", subject: "保持" }, work: [], version: 1 }) };
+  localStorage.setItem(replacedKey, JSON.stringify(replacedItem));
+  const newerItem = { ...replacedItem, json: JSON.stringify({ fields: { mKocon: "replaced", subject: "保持" }, work: [], version: 2 }) };
+  beforePost = async request => { if (request.kocon === "replaced") localStorage.setItem(replacedKey, JSON.stringify(newerItem)); };
+  const replacementResults = await drive.flushPending("report");
+  assert.equal(replacementResults[0].ok, true);
+  assert.deepEqual(JSON.parse(localStorage.getItem(replacedKey)), newerItem);
+  localStorage.removeItem(replacedKey);
+  beforePost = async () => {};
 
   const pendingKocon = "pending-ok";
   let pendingRemote = await drive.saveJson({

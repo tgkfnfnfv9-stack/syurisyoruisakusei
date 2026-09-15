@@ -62,6 +62,17 @@
     delete copy[DATA_TYPE_KEY];
     return copy;
   }
+  function documentJson(data) {
+    // Object property order is not document content. Preserve array order.
+    const sort = value => Array.isArray(value) ? value.map(sort)
+      : value && typeof value === "object"
+        ? Object.keys(value).sort().reduce((result, key) => {
+            result[key] = sort(value[key]);
+            return result;
+          }, Object.create(null))
+        : value;
+    return JSON.stringify(sort(comparableDocument(data)));
+  }
   function validateDocumentForSave(data, docType, kocon, subject) {
     requireDocType(docType);
     if (!data || typeof data !== "object" || Array.isArray(data) ||
@@ -280,6 +291,8 @@
   }
 
   async function centralSave({ kocon, subject, previousSubject, docType, data, expectedRevision }) {
+    // Keep the verification snapshot fixed while the form continues changing.
+    data = JSON.parse(JSON.stringify(data));
     requireDocType(docType);
     const normalizedKocon = normalizeKocon(kocon);
     const normalizedSubject = normalizeSubject(subject);
@@ -312,19 +325,26 @@
       headers: { "Content-Type": "text/plain;charset=UTF-8" },
       body: JSON.stringify(requestBody)
     });
-    const loaded = await centralLoad({
-      kocon: normalizedKocon,
-      subject: normalizedSubject,
-      docType
-    });
-    const loadedRevision = documentRevision(loaded);
-    const revisionMatches = expected == null || loadedRevision === expected + 1;
-    if (!loaded || !revisionMatches ||
-        JSON.stringify(comparableDocument(loaded)) !== JSON.stringify(comparableDocument(data))) {
-      throw new DriveError("他の端末で更新されています。最新データを読み込んでから、もう一度保存してください。", 409);
+    const wantedJson = documentJson(data);
+    for (const delay of [0, 400, 1000, 2000]) {
+      if (delay) await sleep(delay);
+      const loaded = await centralLoad({
+        kocon: normalizedKocon,
+        subject: normalizedSubject,
+        docType
+      });
+      const loadedRevision = documentRevision(loaded);
+      // A previous attempt may already have saved this exact document.
+      // Adopting its revision is safe; never rebase different content.
+      if (loaded && loadedRevision > 0 && documentJson(loaded) === wantedJson) {
+        centralConnected = true;
+        return { ok: true, revision: loadedRevision, updatedAt: loaded._kkmtUpdatedAt || "" };
+      }
+      if (loaded && loadedRevision > (expected == null ? 0 : expected)) {
+        throw new DriveError("他の端末で更新されています。最新データを読み込んでから、もう一度保存してください。", 409);
+      }
     }
-    centralConnected = true;
-    return { ok: true, revision: loadedRevision, updatedAt: loaded._kkmtUpdatedAt || "" };
+    throw new DriveError("共通Driveへの保存を確認できませんでした。通信環境と保存先の設定を確認して、再接続してください。", 503);
   }
 
   async function prepare() {
@@ -768,7 +788,10 @@
           expectedRevision: entry.item.expectedRevision
         });
         try {
-          localStorage.removeItem(entry.key);
+          // Do not delete a newer edit queued during this request.
+          if (JSON.stringify(readJsonStorage(entry.key, null)) === JSON.stringify(entry.item)) {
+            localStorage.removeItem(entry.key);
+          }
         } catch (_) {}
         results.push({ ok: true, item: entry.item, result });
       } catch (error) {
@@ -805,6 +828,7 @@
     let savingPromise = null;
     let commitPromise = null;
     let skipPagehideSave = false;
+    let syncPromise = null;
 
     function setStatus(message, state) {
       if (!statusElement) return;
@@ -817,7 +841,7 @@
       const kocon = normalizeKocon(koconInput && koconInput.value);
       const subject = normalizeSubject(fallbackInput && fallbackInput.value);
       const data = collectState();
-      return { kocon, subject, previousSubject: activeSubject, data, expectedRevision: activeRevision, json: JSON.stringify(comparableDocument(data)) };
+      return { kocon, subject, previousSubject: activeSubject, data, expectedRevision: activeRevision, json: documentJson(data) };
     }
 
     function snapshotKey(current) {
@@ -825,6 +849,10 @@
     }
 
     async function saveLoop() {
+      if (syncPromise) {
+        await syncPromise.catch(() => {});
+        return saveLoop();
+      }
       if (savingPromise) return savingPromise;
       savingPromise = (async () => {
         while (saveRequested) {
@@ -911,6 +939,7 @@
     }
 
     async function whenIdle() {
+      if (syncPromise) await syncPromise.catch(() => {});
       while (commitPromise) await commitPromise;
       clearTimeout(timer);
       if (saveRequested) await saveLoop();
@@ -920,6 +949,7 @@
     }
 
     async function confirmCurrentKocon({ save = true } = {}) {
+      if (syncPromise) await syncPromise.catch(() => {});
       if (commitPromise) return commitPromise;
       commitPromise = (async () => {
         const next = normalizeKocon(koconInput.value);
@@ -1069,18 +1099,37 @@
       if (onSavedRevision) await onSavedRevision(activeRevision);
     }
 
+    function synchronizePending(initialize = false) {
+      if (syncPromise) return syncPromise;
+      const runningSave = savingPromise;
+      syncPromise = (async () => {
+        if (runningSave) await runningSave;
+        if (initialize) await prepare();
+        else await connect();
+        if (!isConnected()) return [];
+        const results = await flushPending(docType);
+        await adoptFlushedRevision(results);
+        return results;
+      })().finally(() => { syncPromise = null; });
+      return syncPromise;
+    }
+
+    function pendingFailureMessage(failures) {
+      return failures.some(entry => entry.error && entry.error.status === 409)
+        ? "未同期データがDriveの更新と競合しています。端末内の変更は保持しています。Driveの最新データを確認してください。"
+        : "未同期データの保存を確認できませんでした。端末内の変更は保持しています。通信環境を確認して再接続してください。";
+    }
+
     async function handleConnect() {
       setStatus("共通Driveへ接続中…");
       connectButton.disabled = true;
       try {
-        await connect();
+        const results = await synchronizePending();
         connectButton.textContent = "共通Drive接続済み";
         setStatus("共通Driveへ接続しました。未同期データを確認中…", "ok");
-        const results = await flushPending(docType);
-        await adoptFlushedRevision(results);
         const failures = results.filter(result => !result.ok);
         if (failures.length) {
-          setStatus("未同期データが他の端末の更新と競合しています。先にDriveの最新データを確認してください。", "error");
+          setStatus(pendingFailureMessage(failures), "error");
           return;
         } else if (results.length) {
           setStatus(`${results.length}件の未同期データを保存しました。`, "ok");
@@ -1114,7 +1163,7 @@
       }
 
       connectButton.disabled = true;
-      prepare().then(() => {
+      synchronizePending(true).then(async results => {
         connectButton.disabled = false;
         if (!isConnected()) {
           connectButton.textContent = "共通Driveに接続";
@@ -1123,23 +1172,16 @@
         }
         connectButton.textContent = "共通Drive接続済み";
         setStatus("共通Drive接続済み。未同期データを確認中…", "ok");
-        flushPending(docType).then(async results => {
-          await adoptFlushedRevision(results);
-          const failures = results.filter(result => !result.ok);
-          if (failures.length) {
-            setStatus("未同期データが他の端末の更新と競合しています。先にDriveの最新データを確認してください。", "error");
-            return;
-          } else if (results.length) {
-            setStatus(`${results.length}件の未同期${label}データを保存しました。`, "ok");
-          } else {
-            setStatus("共通Drive接続済み", "ok");
-          }
-          await resumeIdentity();
-        }).catch(error => {
-          console.error("Central Drive session resume failed", error);
-          setStatus("接続の再開に失敗しました。接続ボタンを押してください。", "error");
-          connectButton.textContent = "共通Driveに接続";
-        });
+        const failures = results.filter(result => !result.ok);
+        if (failures.length) {
+          setStatus(pendingFailureMessage(failures), "error");
+          return;
+        } else if (results.length) {
+          setStatus(`${results.length}件の未同期${label}データを保存しました。`, "ok");
+        } else {
+          setStatus("共通Drive接続済み", "ok");
+        }
+        await resumeIdentity();
       }).catch(error => {
         console.error("Central Drive failed to initialize", error);
         connectButton.disabled = false;

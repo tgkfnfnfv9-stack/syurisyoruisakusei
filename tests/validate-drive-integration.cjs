@@ -29,12 +29,12 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
   assert.doesNotMatch(html, /accounts\.google\.com\/gsi\/client/);
-  assert.match(html, /<script src="google-drive\.js\?v=20260821-14"><\/script>/);
+  assert.match(html, /<script src="google-drive\.js\?v=20260915-1"><\/script>/);
 }
 
 new vm.Script(drive, { filename: "google-drive.js" });
 assert.match(drive, /https:\/\/www\.googleapis\.com\/auth\/drive\.file/);
-assert.match(drive, /https:\/\/script\.google\.com\/macros\/s\/AKfycbxTk0OBNZxgn5u1rYDUYnNQwG27sZ2oL_VyhcIVEChKAb3z9nvErLejaH_94N-5iYq3\/exec/);
+assert.match(drive, /https:\/\/script\.google\.com\/macros\/s\/AKfycbxAWOdV0iGuUQUz1R6W3QlgAx25mchw-Y2g1hoHuBAMB_GP7L4vA3YZ1IRnxZHWrn0k\/exec/);
 assert.match(drive, /centralSharedPin: String\(CENTRAL_OVERRIDE\.pin \|\| "ad5d1bc7"\)/);
 assert.match(drive, /mode: "no-cors"/);
 assert.match(drive, /centralJsonp/);
@@ -125,8 +125,8 @@ assert.match(estimateApp, /function autosaveFromEvent\(event\)\{ const target=ev
 assert.match(reportApp, /function autosaveFromEvent\(event\)\{ const target=event&&event\.target; if\(target&&target\.type==="file"\)return; autosave\(\); \}/);
 assert.match(estimateApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
 assert.match(reportApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
-assert.match(estimate, /google-drive\.js\?v=20260821-14/);
-assert.match(report, /google-drive\.js\?v=20260821-14/);
+assert.match(estimate, /google-drive\.js\?v=20260915-1/);
+assert.match(report, /google-drive\.js\?v=20260915-1/);
 assert.match(drive, /expectedRevision/);
 assert.match(drive, /error\.status === 409/);
 assert.match(drive, /async function whenIdle\(\)/);
