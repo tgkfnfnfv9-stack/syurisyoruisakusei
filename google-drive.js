@@ -231,10 +231,11 @@
       const timeout = global.setTimeout(() => {
         cleanup();
         reject(new DriveError("共通Driveの応答がありません。ページを再読み込みして、もう一度お試しください。"));
-      }, 15000);
+      }, 60000);
       const cleanup = () => {
         global.clearTimeout(timeout);
-        try { delete global[callback]; } catch (_) { global[callback] = undefined; }
+        // A timed-out script can still execute after removal. Ignore its late response.
+        global[callback] = () => {};
         if (script.parentNode) script.parentNode.removeChild(script);
       };
       global[callback] = response => {
