@@ -6,7 +6,7 @@
     clientId: "568409413492-30m6042kemj3vrt2hog6joh2g2p7lcei.apps.googleusercontent.com",
     scope: "https://www.googleapis.com/auth/drive.file",
     centralBackendUrl: CENTRAL_OVERRIDE.url === undefined
-      ? "https://script.google.com/macros/s/AKfycbxTk0OBNZxgn5u1rYDUYnNQwG27sZ2oL_VyhcIVEChKAb3z9nvErLejaH_94N-5iYq3/exec"
+      ? "https://script.google.com/macros/s/AKfycbxAWOdV0iGuUQUz1R6W3QlgAx25mchw-Y2g1hoHuBAMB_GP7L4vA3YZ1IRnxZHWrn0k/exec"
       : String(CENTRAL_OVERRIDE.url || ""),
     centralSharedPin: String(CENTRAL_OVERRIDE.pin || "ad5d1bc7"),
     rootFolderName: "小林機械 書類データ",
