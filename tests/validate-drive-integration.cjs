@@ -29,7 +29,7 @@ for (const [name, html] of [["見積書.html", estimate], ["報告書メーカ�
     new vm.Script(script, { filename: `${name}:inline-${index + 1}` });
   });
   assert.doesNotMatch(html, /accounts\.google\.com\/gsi\/client/);
-  assert.match(html, /<script src="google-drive\.js\?v=20260915-1"><\/script>/);
+  assert.match(html, /<script src="google-drive\.js\?v=20260915-2"><\/script>/);
 }
 
 new vm.Script(drive, { filename: "google-drive.js" });
@@ -115,7 +115,6 @@ assert.match(estimateApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fi
 assert.match(reportApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fields\.estNo/);
 assert.match(estimateApp, /const kocon=\(\$\("mKocon"\)\.value\|\|""\)\.trim\(\)/);
 assert.match(reportApp, /loadJson\(\{kocon,docType:"estimate"\}\)/);
-assert.match(drive, /adoptCurrentKocon\(\{ confirmed = false, save = true, revision \} = \{\}\)/);
 assert.match(drive, /confirmCurrentKocon\(\{ save = true \} = \{\}\)/);
 assert.match(drive, /confirmCurrentKocon\(\{ save: true \}\)/);
 assert.match(drive, /if \(save\) await markDirty\(\{ immediate: true \}\)/);
@@ -125,24 +124,21 @@ assert.match(estimateApp, /function autosaveFromEvent\(event\)\{ const target=ev
 assert.match(reportApp, /function autosaveFromEvent\(event\)\{ const target=event&&event\.target; if\(target&&target\.type==="file"\)return; autosave\(\); \}/);
 assert.match(estimateApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
 assert.match(reportApp, /_app\.addEventListener\("input",autosaveFromEvent\); _app\.addEventListener\("change",autosaveFromEvent\)/);
-assert.match(estimate, /google-drive\.js\?v=20260915-1/);
-assert.match(report, /google-drive\.js\?v=20260915-1/);
+assert.match(estimate, /google-drive\.js\?v=20260915-2/);
+assert.match(report, /google-drive\.js\?v=20260915-2/);
 assert.match(drive, /expectedRevision/);
 assert.match(drive, /error\.status === 409/);
 assert.match(drive, /async function whenIdle\(\)/);
 assert.match(drive, /isSubjectPromotion/);
 assert.match(drive, /await adoptFlushedRevision\(results\)/);
 assert.match(drive, /共通Driveバックエンド経由で保存してください/);
-assert.match(estimateApp, /onIdentityChanging:cancelLocalAutosave/);
-assert.match(reportApp, /onIdentityChanging:cancelLocalAutosave/);
+assert.match(estimateApp, /onIdentityChanging:cancelPendingFormUpdates/);
+assert.match(reportApp, /onIdentityChanging:cancelPendingFormUpdates/);
 assert.match(estimateApp, /buildOutputPair/);
 assert.match(reportApp, /buildOutputPair/);
 assert.match(estimateApp, /driveAutosaveController\.whenIdle/);
 assert.match(reportApp, /driveAutosaveController\.whenIdle/);
 assert.match(reportApp, /async function saveState\(\)\{ if\(driveAutosaveController&&driveAutosaveController\.whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
-assert.match(estimateApp, /rd\.onload=async\(\)=>\{ try\{ const state=.*whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
-assert.match(reportApp, /rd\.onload=async\(\)=>\{ try\{ const report=.*whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
-assert.match(reportApp, /rd\.onload=async\(\)=>\{ try\{ const estimate=.*whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
 assert.match(reportApp, /restoreReportDirectEdits\(\); recalcReport\(\)/);
 assert.match(reportApp, /const firstWorkId=/);
 assert.match(reportApp, /workers","activeWorkers/);
@@ -155,17 +151,14 @@ assert.doesNotMatch(sectionSeven[0], /id="mKocon"/);
 
 assert.match(estimateApp, /documentType:"estimate",schemaVersion:2/);
 assert.match(reportApp, /documentType:"report",schemaVersion:2/);
-assert.match(estimateApp, /validateEstimateState\(JSON\.parse\(rd\.result\)\)/);
-assert.match(reportApp, /validateReportState\(JSON\.parse\(rd\.result\)\)/);
+assert.match(estimateApp, /validateEstimateState\(await KKMTDrive\.readJsonFile\(f\)\)/);
+assert.match(reportApp, /validateReportState\(await KKMTDrive\.readJsonFile\(f\)\)/);
 assert.match(reportApp, /type==="kkmt-customer-signature"/);
-assert.match(estimateApp, /adoptCurrentKocon\(\{confirmed:true,save:false\}\)/);
-assert.match(reportApp, /adoptCurrentKocon\(\{confirmed:true,save:false\}\)/);
 assert.doesNotMatch(estimateApp, /sh\.innerHTML=s\.sheetHTML/);
 assert.doesNotMatch(reportApp, /sh\.innerHTML=s\.sheetHTML/);
 assert.match(estimateApp, /notesByKey/);
 assert.match(reportApp, /data-edit-key/);
 assert.match(drive, /const candidateKocon = normalizeKocon/);
-assert.match(drive, /koconInput\.value = previous;\s+await markDirty\(\{ immediate: true \}\);\s+koconInput\.value = next;/);
 assert.match(drive, /fallbackInput\.addEventListener\("input", \(\) => markDirty\(\)\)/);
 
 console.log("Google Drive integration checks passed.");

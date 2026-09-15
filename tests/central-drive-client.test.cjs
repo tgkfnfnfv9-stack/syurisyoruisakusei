@@ -486,6 +486,118 @@ vm.runInNewContext(
   assert.match(onlyOfflineKey, /k_offline-777/);
   assert.doesNotMatch(onlyOfflineKey, /s_/);
 
+
+  // Loading must finish while an old save or startup flush is still blocked.
+  for (const docType of ["estimate", "report"]) {
+    for (const operation of ["save", "startup"]) {
+      const id = "load-" + docType + "-" + operation;
+      const key = "kkmt_drive_pending_" + docType + "_k_" + id;
+      let state = { fields: { mKocon: id, subject: "読み込み前" }, ...(docType === "report" ? { work: [] } : { wdays: [] }), _kkmtRevision: 0 };
+      const oldState = clone(state);
+      const input = makeInput(id), subject = makeInput("読み込み前"), status = makeStatus();
+      const root = { inert: false, addEventListener() {} };
+      const apply = data => { state = clone(data); input.value = state.fields.mKocon; subject.value = state.fields.subject; };
+      let release, entered;
+      const started = new Promise(resolve => { entered = resolve; });
+      const blocked = new Promise(resolve => { release = resolve; });
+      beforePost = async request => { if (request.kocon === id) { entered(); await blocked; } };
+      const ctl = drive.createAutosaveController({
+        docType, rootElement: root, koconInput: input, fallbackInput: subject, statusElement: status,
+        connectButton: makeButton(), collectState: () => clone(state), restoreState: apply,
+        onSavedRevision: revision => { state._kkmtRevision = revision; }, skipInitialLoad: true
+      });
+      let saving;
+      if (operation === "startup") {
+        localStorage.setItem(key, JSON.stringify({ docType, kocon: id, subject: subject.value, expectedRevision: 0, json: JSON.stringify(state) }));
+        ctl.init();
+      } else { saving = ctl.markDirty({ immediate: true }); }
+      await started;
+      const loaded = { ...oldState, fields: { mKocon: id + "-new", subject: "読み込み後" }, _kkmtRevision: 12 };
+      const loadResult = await Promise.race([
+        ctl.loadDocument({ load: async () => loaded, apply, message: "読み込み完了" }),
+        new Promise(resolve => setTimeout(() => resolve("blocked"), 100))
+      ]);
+      assert.equal(loadResult, true, "local loading must not wait for Drive");
+      assert.equal(root.inert, false);
+      assert.equal(state._kkmtRevision, 12);
+      assert.notEqual(localStorage.getItem(key), null, "outgoing draft is preserved");
+      release();
+      if (saving) await saving;
+      await waitForAsyncInit();
+      assert.equal(state._kkmtRevision, 12, "old response must not stamp the loaded draft");
+      assert.equal(input.value, loaded.fields.mKocon);
+      assert.equal(status.textContent, "読み込み完了", "old response must not replace load status");
+      beforePost = async () => {};
+      localStorage.removeItem(key);
+
+      // Rejected input and a partially failing renderer retain the preceding draft.
+      await assert.rejects(() => ctl.loadDocument({ load: async () => { throw new Error("invalid JSON"); }, apply }), /invalid JSON/);
+      assert.deepEqual(state, loaded);
+      await assert.rejects(() => ctl.loadDocument({ load: async () => oldState, apply: data => { apply(data); throw new Error("render failed"); } }), /render failed/);
+      assert.deepEqual(state, loaded);
+      assert.equal(root.inert, false);
+      localStorage.removeItem("kkmt_drive_pending_" + docType + "_k_" + loaded.fields.mKocon);
+    }
+  }
+
+
+  // Explicit Drive reloads follow in-flight writes, and repeated clicks cannot
+  // apply a second document while the first load is pending.
+  let remoteState = { fields: { mKocon: "ordered-load", subject: "Drive読込" }, wdays: [], _kkmtRevision: 0 };
+  let releaseRemote, remoteStarted;
+  const remoteEntered = new Promise(resolve => { remoteStarted = resolve; });
+  const remoteWait = new Promise(resolve => { releaseRemote = resolve; });
+  beforePost = async request => { if (request.kocon === "ordered-load") { remoteStarted(); await remoteWait; } };
+  const remoteCtl = drive.createAutosaveController({
+    docType: "estimate", rootElement: { addEventListener() {} }, koconInput: makeInput("ordered-load"),
+    fallbackInput: makeInput("Drive読込"), statusElement: makeStatus(), connectButton: makeButton(),
+    collectState: () => clone(remoteState), onSavedRevision: revision => { remoteState._kkmtRevision = revision; }
+  });
+  const remoteSaving = remoteCtl.markDirty({ immediate: true });
+  await remoteEntered;
+  let readStarted = false;
+  const remoteLoading = remoteCtl.loadDocument({
+    synced: true, load: async () => { readStarted = true; return drive.loadJson({ kocon: "ordered-load", docType: "estimate" }); },
+    apply: data => { remoteState = clone(data); }
+  });
+  await Promise.resolve();
+  assert.equal(readStarted, false);
+  assert.equal(await remoteCtl.loadDocument({ load: () => { throw new Error("second click"); }, apply() {} }), false);
+  releaseRemote();
+  await remoteSaving;
+  await remoteLoading;
+  assert.equal(remoteState._kkmtRevision, 1);
+  beforePost = async () => {};
+  localStorage.removeItem("kkmt_drive_pending_estimate_k_ordered-load");
+
+  // A slow automatic high-con lookup must not replace a newer explicit file load.
+  let lookupRelease, lookupStarted;
+  const lookupEntered = new Promise(resolve => { lookupStarted = resolve; });
+  const lookupWait = new Promise(resolve => { lookupRelease = resolve; });
+  let lookupState = { fields: { mKocon: "lookup-old", subject: "旧" }, wdays: [], _kkmtRevision: 0 };
+  const lookupInput = makeInput("lookup-old"), lookupSubject = makeInput("旧");
+  const lookupApply = data => { lookupState = clone(data); lookupInput.value = data.fields.mKocon; lookupSubject.value = data.fields.subject; };
+  const lookupCtl = drive.createAutosaveController({
+    docType: "estimate", rootElement: { addEventListener() {} }, koconInput: lookupInput,
+    fallbackInput: lookupSubject, statusElement: makeStatus(), connectButton: makeButton(),
+    collectState: () => clone(lookupState), onSavedRevision: revision => { lookupState._kkmtRevision = revision; },
+    onKoconConfirmed: async ({ isCurrent }) => {
+      lookupStarted(); await lookupWait;
+      if (!isCurrent()) return false;
+      lookupApply({ fields: { mKocon: "lookup-old", subject: "遅れた結果" }, wdays: [], _kkmtRevision: 3 });
+      return { loaded: true, revision: 3 };
+    }
+  });
+  const lookup = lookupCtl.confirmCurrentKocon();
+  await lookupEntered;
+  await lookupCtl.loadDocument({ load: async () => ({ fields: { mKocon: "lookup-new", subject: "新" }, wdays: [], _kkmtRevision: 9 }), apply: lookupApply });
+  lookupRelease();
+  await lookup;
+  assert.equal(lookupInput.value, "lookup-new");
+  assert.equal(lookupState._kkmtRevision, 9);
+  assert.equal(lookupInput.disabled, false);
+  localStorage.removeItem("kkmt_drive_pending_estimate_k_lookup-old");
+
   console.log("Central Drive client checks passed.");
 })().catch(error => {
   console.error(error);
