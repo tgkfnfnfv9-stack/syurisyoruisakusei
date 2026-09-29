@@ -76,7 +76,6 @@ details .help{ margin-top:6px; line-height:1.6; color:#4a5663; } details .help a
 .del{ width:34px; height:38px; border:1px solid var(--line); background:#fff; border-radius:7px; color:var(--accent); font-size:17px; cursor:pointer; flex:none; align-self:flex-end; } .del:hover{ background:#fdecec; }
 
 .preview{ overflow:auto; padding:16px 22px 60px; background:var(--bg); }
-.bar{ display:flex; gap:10px; align-items:center; margin-bottom:12px; flex-wrap:wrap; } .bar .tip{ font-size:11.5px; color:#5a6776; }
 .empty{ color:#9aa6b3; text-align:center; padding:120px 20px; font-size:14px; line-height:1.8; }
 .sheet{ width:1123px; min-height:760px; background:#fff; color:#000; box-shadow:0 4px 24px rgba(0,0,0,.12); padding:24px 28px; font-size:11px; line-height:1.45; margin:0 auto; }
 .top-date{ text-align:right; } .title{ text-align:center; font-size:22px; font-weight:700; letter-spacing:.7em; padding-left:.7em; margin:2px 0 14px; }
@@ -92,8 +91,8 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 .note-block{ font-size:9px; line-height:1.55; white-space:pre-wrap; } .note-block .nbt{ font-weight:700; font-size:9.5px; }
 .sum td{ text-align:right; font-weight:700; } .sum .sl{ background:#f0f0f0; }
 .rowdel{ display:inline-block; margin-left:4px; width:16px; height:16px; line-height:14px; text-align:center; border:1px solid #c62828; color:#c62828; background:#fff; border-radius:4px; font-size:12px; cursor:pointer; vertical-align:middle; } .rowdel:hover{ background:#fdecec; }
-[contenteditable]{ outline:none; white-space:pre-wrap; } .sheet [contenteditable]:hover{ background:#fff8e1; } .sheet [contenteditable]:focus{ background:#fffde7; box-shadow:inset 0 0 0 1px #f0c987; }
-@media print{ @page{ size:A4 landscape; margin:5mm; } body{ background:#fff; } .app{ display:block; height:auto; } .form, .bar{ display:none !important; } .preview{ padding:0; overflow:visible; } .sheet{ width:100%; min-height:auto; box-shadow:none; padding:0; } #sheetExtra .sheet{ page-break-before:always; margin:0; } .rowdel{ display:none !important; } .sheet [contenteditable]:hover,.sheet [contenteditable]:focus{ background:transparent; box-shadow:none; } }
+[data-report-field]{ white-space:pre-wrap; }
+@media print{ @page{ size:A4 landscape; margin:5mm; } body{ background:#fff; } .app{ display:block; height:auto; } .form{ display:none !important; } .preview{ padding:0; overflow:visible; } .sheet{ width:100%; min-height:auto; box-shadow:none; padding:0; } #sheetExtra .sheet{ page-break-before:always; margin:0; } .rowdel{ display:none !important; } }
 @media (max-width:900px){ .app{ grid-template-columns:1fr; height:auto; } .preview{ overflow-x:auto; } }
 /* 報告書 */
 .rp{ font-size:10.5px; } .rp .title{ text-align:center; font-size:22px; font-weight:700; letter-spacing:.5em; margin-bottom:6px; }
@@ -359,11 +358,10 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
         <button class="btn btn-blue big" id="pdfBtn">PDF保存</button>
         <button class="btn btn-blue big" id="dataBtn">データ保存</button>
       </div></div>
-    <p class="foot">見積書の各欄はクリックで直接修正可（金額を直すと合計も自動再計算）。明細の行番号横「×」で行削除。A4・横推奨。</p>
+    <p class="foot">A4・横推奨。</p>
   </aside>
 
   <main class="preview">
-    <div class="bar"><span class="tip">各欄はクリックで直接修正できます。</span></div>
     <div id="sheet" class="sheet"><div class="empty">左の入力内容が<br>ここに自動反映されます</div></div>
     <div id="sheetExtra"></div>
   </main>
@@ -969,21 +967,21 @@ function computeItems(){
 }
 
 function fmtDate(v){ const d=v?new Date(v+"T00:00:00"):new Date(); return `${d.getFullYear()}年${d.getMonth()+1}月${d.getDate()}日`; }
-function itemRowHTML(rn,name,amt){ return `<tr class="item-row"><td class="c-code"><span class="rn">${rn}</span><button class="rowdel" title="行を削除">×</button></td><td class="c-name" contenteditable>${name}</td><td class="c-qty" contenteditable>1</td><td class="c-unit" contenteditable>式</td><td class="c-price" contenteditable></td><td class="c-amt" contenteditable>${amt}</td><td class="c-note" contenteditable></td></tr>`; }
+function itemRowHTML(rn,name,amt){ return `<tr class="item-row"><td class="c-code"><span class="rn">${rn}</span><button class="rowdel" title="行を削除">×</button></td><td class="c-name" data-report-field>${name}</td><td class="c-qty" data-report-field>1</td><td class="c-unit" data-report-field>式</td><td class="c-price" data-report-field></td><td class="c-amt" data-report-field>${amt}</td><td class="c-note" data-report-field></td></tr>`; }
 function renumberRows(){ document.querySelectorAll("#tbody .item-row .rn").forEach((s,i)=>s.textContent=i+1); }
 function bindItemRow(tr){ const a=tr.querySelector(".c-amt"); if(a)a.addEventListener("input",recalc); const d=tr.querySelector(".rowdel"); if(d)d.addEventListener("click",()=>{tr.remove();renumberRows();recalc();}); }
 function renderSheet(){ const items=computeItems(); let rows="";
   items.forEach((it,i)=>rows+=itemRowHTML(i+1,esc(it.name).replace(/\n/g,"<br>"),num(it.amt)));
-  rows+=`<tr id="noteRow"><td class="c-code"></td><td></td><td></td><td></td><td></td><td></td><td class="c-note note-block" contenteditable><span class="nbt">基本料金一覧</span>\n${esc(NOTE_TEXT)}</td></tr>`;
-  $("sheet").innerHTML=`<div class="top-date" contenteditable>${fmtDate("")}</div><div class="title">御見積書</div>
+  rows+=`<tr id="noteRow"><td class="c-code"></td><td></td><td></td><td></td><td></td><td></td><td class="c-note note-block" data-report-field><span class="nbt">基本料金一覧</span>\n${esc(NOTE_TEXT)}</td></tr>`;
+  $("sheet").innerHTML=`<div class="top-date" data-report-field>${fmtDate("")}</div><div class="title">御見積書</div>
     <div class="head"><div class="head-left">
-      <div class="client-line"><span class="name" contenteditable>${esc($("client").value.trim())}</span><span class="onchu">御中</span></div>
-      <div class="kv"><div class="k">件　　名</div><div class="v" contenteditable>${esc($("subject").value.trim())}</div>
-        <div class="k">作業期日</div><div class="v" contenteditable>${$("workDate").value?fmtDate($("workDate").value):""}</div>
-        <div class="k">作業場所</div><div class="v" contenteditable>${esc($("address").value.trim())}</div>
-        <div class="k">支払条件</div><div class="v" contenteditable>請求書届き次第</div>
-        <div class="k">有効期限</div><div class="v" contenteditable>3ヶ月</div>
-        <div class="k">見積番号</div><div class="v" contenteditable>${esc($("mKocon").value.trim())}</div></div>
+      <div class="client-line"><span class="name" data-report-field>${esc($("client").value.trim())}</span><span class="onchu">御中</span></div>
+      <div class="kv"><div class="k">件　　名</div><div class="v" data-report-field>${esc($("subject").value.trim())}</div>
+        <div class="k">作業期日</div><div class="v" data-report-field>${$("workDate").value?fmtDate($("workDate").value):""}</div>
+        <div class="k">作業場所</div><div class="v" data-report-field>${esc($("address").value.trim())}</div>
+        <div class="k">支払条件</div><div class="v" data-report-field>請求書届き次第</div>
+        <div class="k">有効期限</div><div class="v" data-report-field>3ヶ月</div>
+        <div class="k">見積番号</div><div class="v" data-report-field>${esc($("mKocon").value.trim())}</div></div>
       <div class="total-box"><span class="lbl">合計金額(消費税等込)</span><span class="amt" id="topTotal">¥0</span></div></div>
       <div class="head-right"><div class="stamp"><div class="c"></div><div class="c"></div><div class="c"></div></div>
         <div class="brand">EAST&nbsp;JAPAN&nbsp;MACHINE<br>PLAZA</div><div class="co">株式会社 小林機械</div>
@@ -997,17 +995,17 @@ function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt
   if($("subCell")){$("subCell").textContent=num(sub);$("taxCell").textContent=num(tax);$("totalCell").textContent=num(total);$("topTotal").textContent=yen(total);} }
 function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); }
 
+// 旧データの直接修正内容は表示・再保存のみ対応し、プレビューからは編集しない。
 let _reportDirectEdits={};
 let _reportLegacyMigration=false;
 function reportEditableText(el){ return el&&typeof el.innerText==="string"?el.innerText:(el&&el.textContent)||""; }
-function assignReportEditKeys(){ const pages=[$("sheet"),...(($("sheetExtra")&&[...$("sheetExtra").querySelectorAll(".sheet")])||[])].filter(Boolean);
+function assignReportFieldKeys(){ const pages=[$("sheet"),...(($("sheetExtra")&&[...$("sheetExtra").querySelectorAll(".sheet")])||[])].filter(Boolean);
   pages.forEach((page,pageIndex)=>{ const pageKey=page.dataset.pageKey||("page:"+pageIndex),workIds=String(page.dataset.workIds||"").split(","),workerKey=page.dataset.workerKey||"";
     const workRows=[...page.querySelectorAll(".wb")];
-    page.querySelectorAll("[contenteditable]").forEach((el,index)=>{ const workRow=el.closest(".wb"); let key;
-      if(workRow){ const rowIndex=workRows.indexOf(workRow),workId=workIds[rowIndex]||("empty:"+pageKey+":"+rowIndex),cellIndex=[...workRow.querySelectorAll("[contenteditable]")].indexOf(el); key="work:"+workId+":workers:"+workerKey+":cell:"+cellIndex; }
-      else key=pageKey+":static:"+[...page.querySelectorAll("[contenteditable]:not(.wb [contenteditable])")].indexOf(el);
+    page.querySelectorAll("[data-report-field]").forEach((el,index)=>{ const workRow=el.closest(".wb"); let key;
+      if(workRow){ const rowIndex=workRows.indexOf(workRow),workId=workIds[rowIndex]||("empty:"+pageKey+":"+rowIndex),cellIndex=[...workRow.querySelectorAll("[data-report-field]")].indexOf(el); key="work:"+workId+":workers:"+workerKey+":cell:"+cellIndex; }
+      else key=pageKey+":static:"+[...page.querySelectorAll("[data-report-field]:not(.wb [data-report-field])")].indexOf(el);
       el.dataset.editKey=key; el.dataset.legacyEditKey="page:"+pageIndex+":edit:"+index; el.dataset.generatedValue=reportEditableText(el);
-      el.addEventListener("input",()=>{ const value=reportEditableText(el); if(value===el.dataset.generatedValue)delete _reportDirectEdits[key]; else _reportDirectEdits[key]=value; autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); });
     });
   }); }
 function captureReportDirectEdits(){ return {..._reportDirectEdits}; }
@@ -1074,7 +1072,7 @@ function applyState(raw){ if(!raw)return; const s=validateReportState(raw); _doc
   $("lodgeList").innerHTML=""; const _lr=lodgesFromState(s); (_lr.length?_lr:[null]).forEach(l=>addLodgeRow(l)); refreshLodge();
   $("workRows").innerHTML=""; (workRows.length?workRows:[null]).forEach(w=>addWorkRow(w));
   sigDataURL=isValidSignatureData(s.signature||"")?(s.signature||""):""; if(mainPad)mainPad.draw(sigDataURL); updateSigState();
-  syncSameState(false); syncWE(); syncBase(); refreshDirect(); renderReport(false); }
+  syncSameState(false); syncWE(); syncBase(); refreshDirect(); renderReport(); }
 
 /* ===== 自動保存（下書き）：APIキー(kkmt_gkey)・作業者リスト(kkmt_workers)は別枠なので消えない ===== */
 const DRAFT_KEY="kkmt_report_draft";
@@ -1229,7 +1227,7 @@ function computeCosts(){
   return { workFee,partsTotal,transport:Math.round(transport),travel:Math.round(travel),toll:Math.round(toll),lodging:Math.round(lodging),otherTotal,parts,customs,reportTotal,dT,dV,dK,dL };
 }
 function detailHTML(arr){ return (arr&&arr.length?arr:[["",0]]).map(([t,v])=>`<div class="detail-line"><span>（ ${esc(t)} ）</span><span>合計 ${num(v)}</span></div>`).join(""); }
-function renderReport(preserveDirectEdits=true){ if(preserveDirectEdits)captureReportDirectEdits();
+function renderReport(){
   const C=computeCosts(); const W=getWorkRows();
   let totH=0; W.forEach(w=>(w.people||[]).forEach(p=>totH+=parseNum(p.hours)));
   const rows=W.slice(); while(rows.length<7) rows.push({});
@@ -1246,28 +1244,28 @@ function renderReport(preserveDirectEdits=true){ if(preserveDirectEdits)captureR
   for(let i=0;i<7;i++){ const w=rows[i]||{}; const ppl=w.people||[];
     const range=(w.start||w.end)?esc(w.start||"")+"〜"+esc(w.end||""):"〜";
     const hrsFor=name=>{ const p=ppl.find(x=>x.worker===name); return (p&&p.hours)?num(parseNum(p.hours)):""; };
-    const wh=[0,1,2,3].map(k=>`<td colspan="3" class="ctr" contenteditable>${workers[k]?hrsFor(workers[k]):""}</td>`).join("");
+    const wh=[0,1,2,3].map(k=>`<td colspan="3" class="ctr" data-report-field>${workers[k]?hrsFor(workers[k]):""}</td>`).join("");
     const rowH=ppl.reduce((s,p)=>s+parseNum(p.hours),0);
     const lab=costLab[i],val=costVal[i];
-    const cc= lab?`<td class="lbl" colspan="4">${lab}</td><td class="num rc" colspan="8" contenteditable>${z(val)}</td>`:`<td colspan="4"></td><td colspan="8"></td>`;
-    body+=`<tr class="wb"><td class="ctr">${dow(w.date,w.holiday)}</td><td colspan="3" class="ctr" contenteditable>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" contenteditable>${esc(w.content||"")}</td><td colspan="7" class="ctr" contenteditable>${range}</td>${wh}<td colspan="3" class="ctr" contenteditable>${rowH>0?num(rowH):""}</td>${cc}</tr>`;
+    const cc= lab?`<td class="lbl" colspan="4">${lab}</td><td class="num rc" colspan="8" data-report-field>${z(val)}</td>`:`<td colspan="4"></td><td colspan="8"></td>`;
+    body+=`<tr class="wb"><td class="ctr">${dow(w.date,w.holiday)}</td><td colspan="3" class="ctr" data-report-field>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" data-report-field>${esc(w.content||"")}</td><td colspan="7" class="ctr" data-report-field>${range}</td>${wh}<td colspan="3" class="ctr" data-report-field>${rowH>0?num(rowH):""}</td>${cc}</tr>`;
   }
   $("sheet").className="sheet rp"; $("sheet").dataset.pageKey="main"; $("sheet").dataset.workIds=rows.map(row=>row.id||"").join(","); $("sheet").dataset.workerKey=workers.filter(Boolean).join(",");
   $("sheet").innerHTML=`
   <div class="titlecell">作 業 報 告 書</div>
-  <table class="rep submrow"><tr><td class="lft">＜報告書提出日：<span contenteditable>${$("repDate").value?fmtDate($("repDate").value):"　　月　　日"}</span></td></tr></table>
+  <table class="rep submrow"><tr><td class="lft">＜報告書提出日：<span data-report-field>${$("repDate").value?fmtDate($("repDate").value):"　　月　　日"}</span></td></tr></table>
   <div class="cols">
     <div class="colL">
       <table class="rep ltbl">
-        <tr style="height:40px"><td>ご請求先：<span contenteditable>${esc(($("billName").value||$("client").value).trim())}</span></td></tr>
-        <tr style="height:56px"><td>住所：<span contenteditable>${esc($("billAddr").value.trim())}</span></td></tr>
-        <tr style="height:40px"><td>電話：<span contenteditable>${esc($("billTel").value.trim())}</span></td></tr>
-        <tr style="height:56px"><td>ご担当者様名：<span contenteditable>${esc($("billPerson").value.trim())}</span></td></tr>
-        <tr style="height:40px"><td>顧客名：<span contenteditable>${esc(($("sameAsSite").checked?$("billName").value:$("siteName").value).trim())}</span></td></tr>
-        <tr style="height:56px"><td>住所：<span contenteditable>${esc(($("sameAsSite").checked?$("billAddr").value:$("address").value).trim())}</span></td></tr>
-        <tr style="height:40px"><td>電話：<span contenteditable>${esc(($("sameAsSite").checked?$("billTel").value:$("siteTel").value).trim())}</span></td></tr>
+        <tr style="height:40px"><td>ご請求先：<span data-report-field>${esc(($("billName").value||$("client").value).trim())}</span></td></tr>
+        <tr style="height:56px"><td>住所：<span data-report-field>${esc($("billAddr").value.trim())}</span></td></tr>
+        <tr style="height:40px"><td>電話：<span data-report-field>${esc($("billTel").value.trim())}</span></td></tr>
+        <tr style="height:56px"><td>ご担当者様名：<span data-report-field>${esc($("billPerson").value.trim())}</span></td></tr>
+        <tr style="height:40px"><td>顧客名：<span data-report-field>${esc(($("sameAsSite").checked?$("billName").value:$("siteName").value).trim())}</span></td></tr>
+        <tr style="height:56px"><td>住所：<span data-report-field>${esc(($("sameAsSite").checked?$("billAddr").value:$("address").value).trim())}</span></td></tr>
+        <tr style="height:40px"><td>電話：<span data-report-field>${esc(($("sameAsSite").checked?$("billTel").value:$("siteTel").value).trim())}</span></td></tr>
         <tr style="height:92px"><td>お客様ご確認：<div class="sigbox">${sig}</div></td></tr>
-        <tr style="height:24px"><td>支払い予定日：<span contenteditable>${esc($("payDate").value)}</span>　月　日</td></tr>
+        <tr style="height:24px"><td>支払い予定日：<span data-report-field>${esc($("payDate").value)}</span>　月　日</td></tr>
         <tr style="height:44px"><td class="center">本作業にて検収完了と致します。<br>${cb($("doneComplete").checked)} 作業完了　${cb($("doneIncomplete").checked)} 未完了</td></tr>
         <tr><td class="company"><b>株式会社　小林機械</b><br>群馬県館林市赤生田本町3831-2<br>TEL:(0276)74-4406<br>FAX:(0276)74-6731</td></tr>
       </table>
@@ -1275,14 +1273,14 @@ function renderReport(preserveDirectEdits=true){ if(preserveDirectEdits)captureR
     <div class="colR">
       <table class="rep" style="table-layout:fixed">${colg45}
         <tr><th colspan="11">機械メーカー</th><th colspan="7">機種</th><th colspan="9">機械番号</th><th colspan="10">年式</th><th colspan="8">高コン</th></tr>
-        <tr><td colspan="11" class="ctr" contenteditable>${esc($("mMaker").value.trim())}</td><td colspan="7" class="ctr" contenteditable>${esc($("mType").value.trim())}</td><td colspan="9" class="ctr" contenteditable>${esc($("mNo").value.trim())}</td><td colspan="10" class="ctr" contenteditable>${esc($("mYear").value.trim())}</td><td colspan="8" class="ctr" contenteditable>${esc($("mKocon").value.trim())}</td></tr>
+        <tr><td colspan="11" class="ctr" data-report-field>${esc($("mMaker").value.trim())}</td><td colspan="7" class="ctr" data-report-field>${esc($("mType").value.trim())}</td><td colspan="9" class="ctr" data-report-field>${esc($("mNo").value.trim())}</td><td colspan="10" class="ctr" data-report-field>${esc($("mYear").value.trim())}</td><td colspan="8" class="ctr" data-report-field>${esc($("mKocon").value.trim())}</td></tr>
         <tr><td colspan="11"></td><th colspan="7">作業時間</th><th colspan="15">作業者・時間</th><th colspan="4">バーコード</th><td colspan="8"></td></tr>
-        <tr><th colspan="4">日付</th><th colspan="7">内容</th><th colspan="7">時間帯</th><th colspan="3">${esc(workers[0])}</th><th colspan="3">${esc(workers[1])}</th><th colspan="3">${esc(workers[2])}</th><th colspan="3">${esc(workers[3])}</th><th colspan="3">合計</th><td class="lbl" colspan="4">作業費</td><td class="num rc" colspan="8" contenteditable>${z(C.workFee)}</td></tr>
+        <tr><th colspan="4">日付</th><th colspan="7">内容</th><th colspan="7">時間帯</th><th colspan="3">${esc(workers[0])}</th><th colspan="3">${esc(workers[1])}</th><th colspan="3">${esc(workers[2])}</th><th colspan="3">${esc(workers[3])}</th><th colspan="3">合計</th><td class="lbl" colspan="4">作業費</td><td class="num rc" colspan="8" data-report-field>${z(C.workFee)}</td></tr>
         ${body}
         <tr><td colspan="27"></td><td class="lbl" colspan="3">合計</td><td class="num" colspan="3">${totH>0?num(totH):""}</td><td class="lbl" colspan="4">合計</td><td class="num" colspan="8" id="rpTotal"><b>${C.reportTotal>0?num(C.reportTotal):""}</b></td></tr>
-        <tr class="dl2"><td class="lbll vtop" colspan="9">不具合内容：</td><td colspan="36" class="vtop" contenteditable>${esc($("trouble").value).replace(/\n/g,"<br>")}</td></tr>
-        <tr class="dl2"><td class="lbll vtop" colspan="9">原因：</td><td colspan="36" class="vtop" contenteditable>${esc($("cause").value).replace(/\n/g,"<br>")}</td></tr>
-        <tr class="dl2"><td class="lbll vtop" colspan="9">処置：</td><td colspan="36" class="vtop" contenteditable>${$("custSupply").checked?"部品お客様支給"+($("action").value?"<br>":""):""}${esc($("action").value).replace(/\n/g,"<br>")}</td></tr>
+        <tr class="dl2"><td class="lbll vtop" colspan="9">不具合内容：</td><td colspan="36" class="vtop" data-report-field>${esc($("trouble").value).replace(/\n/g,"<br>")}</td></tr>
+        <tr class="dl2"><td class="lbll vtop" colspan="9">原因：</td><td colspan="36" class="vtop" data-report-field>${esc($("cause").value).replace(/\n/g,"<br>")}</td></tr>
+        <tr class="dl2"><td class="lbll vtop" colspan="9">処置：</td><td colspan="36" class="vtop" data-report-field>${$("custSupply").checked?"部品お客様支給"+($("action").value?"<br>":""):""}${esc($("action").value).replace(/\n/g,"<br>")}</td></tr>
         <tr class="dl dlf"><td colspan="38" class="lft vtop">部品詳細：${pline(C.parts.map(p=>[p.name,p.amt]))}</td><td class="lbl" colspan="2">合計</td><td class="num" colspan="5">${z(C.partsTotal)}</td></tr>
         <tr class="dl dlf"><td colspan="38" class="lft vtop">交通費詳細：${dline([...C.dT,...C.dV,...C.dK])}</td><td class="lbl" colspan="2">合計</td><td class="num" colspan="5">${z(C.transport+C.travel+C.toll)}</td></tr>
         <tr class="dl dlf"><td colspan="38" class="lft vtop">宿泊費詳細：${dline(C.dL)}</td><td class="lbl" colspan="2">合計</td><td class="num" colspan="5">${z(C.lodging)}</td></tr>
@@ -1290,8 +1288,7 @@ function renderReport(preserveDirectEdits=true){ if(preserveDirectEdits)captureR
       </table>
     </div>
   </div>`;
-  renderOverflow(); assignReportEditKeys(); restoreReportDirectEdits(); recalcReport();
-  document.querySelectorAll("#sheet .rc,#sheetExtra .rc").forEach(c=>c.addEventListener("input",recalcReport));
+  renderOverflow(); assignReportFieldKeys(); restoreReportDirectEdits(); recalcReport();
   fitAllCells();
 }
 let _livePreviewT=null;
@@ -1318,27 +1315,27 @@ function workTableSheet(days, wk){
   for(let i=0;i<7;i++){ const w=rows[i]||{}; const ppl=w.people||[];
     const range=(w.start||w.end)?esc(w.start||"")+"〜"+esc(w.end||""):"〜";
     const hrsFor=name=>{ const p=ppl.find(x=>x.worker===name); return (p&&p.hours)?num(parseNum(p.hours)):""; };
-    const wh=[0,1,2,3].map(k=>`<td colspan="3" class="ctr" contenteditable>${w4[k]?hrsFor(w4[k]):""}</td>`).join("");
+    const wh=[0,1,2,3].map(k=>`<td colspan="3" class="ctr" data-report-field>${w4[k]?hrsFor(w4[k]):""}</td>`).join("");
     const rowH=ppl.reduce((s,p)=>s+parseNum(p.hours),0);
     const lab=costLab[i];
-    const cc= lab?`<td class="lbl" colspan="4">${lab}</td><td class="num rc" colspan="8" contenteditable></td>`:`<td colspan="4"></td><td colspan="8"></td>`;
-    body+=`<tr class="wb"><td class="ctr">${wkdow(w.date,w.holiday)}</td><td colspan="3" class="ctr" contenteditable>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" contenteditable>${esc(w.content||"")}</td><td colspan="7" class="ctr" contenteditable>${range}</td>${wh}<td colspan="3" class="ctr" contenteditable>${rowH>0?num(rowH):""}</td>${cc}</tr>`;
+    const cc= lab?`<td class="lbl" colspan="4">${lab}</td><td class="num rc" colspan="8" data-report-field></td>`:`<td colspan="4"></td><td colspan="8"></td>`;
+    body+=`<tr class="wb"><td class="ctr">${wkdow(w.date,w.holiday)}</td><td colspan="3" class="ctr" data-report-field>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" data-report-field>${esc(w.content||"")}</td><td colspan="7" class="ctr" data-report-field>${range}</td>${wh}<td colspan="3" class="ctr" data-report-field>${rowH>0?num(rowH):""}</td>${cc}</tr>`;
   }
   return `<div class="sheet rp cont" data-page-key="${esc(pageKey)}" data-work-ids="${esc(sourceDays.map(row=>row.id||"").join(","))}" data-worker-key="${esc(sourceWorkers.join(","))}">
   <div class="titlecell">作 業 報 告 書</div>
-  <table class="rep submrow"><tr><td class="lft">＜報告書提出日：<span contenteditable></span></td></tr></table>
+  <table class="rep submrow"><tr><td class="lft">＜報告書提出日：<span data-report-field></span></td></tr></table>
   <div class="cols">
     <div class="colL">
       <table class="rep ltbl">
-        <tr style="height:40px"><td>ご請求先：<span contenteditable></span></td></tr>
-        <tr style="height:56px"><td>住所：<span contenteditable></span></td></tr>
-        <tr style="height:40px"><td>電話：<span contenteditable></span></td></tr>
-        <tr style="height:56px"><td>ご担当者様名：<span contenteditable></span></td></tr>
-        <tr style="height:40px"><td>顧客名：<span contenteditable></span></td></tr>
-        <tr style="height:56px"><td>住所：<span contenteditable></span></td></tr>
-        <tr style="height:40px"><td>電話：<span contenteditable></span></td></tr>
+        <tr style="height:40px"><td>ご請求先：<span data-report-field></span></td></tr>
+        <tr style="height:56px"><td>住所：<span data-report-field></span></td></tr>
+        <tr style="height:40px"><td>電話：<span data-report-field></span></td></tr>
+        <tr style="height:56px"><td>ご担当者様名：<span data-report-field></span></td></tr>
+        <tr style="height:40px"><td>顧客名：<span data-report-field></span></td></tr>
+        <tr style="height:56px"><td>住所：<span data-report-field></span></td></tr>
+        <tr style="height:40px"><td>電話：<span data-report-field></span></td></tr>
         <tr style="height:92px"><td>お客様ご確認：<div class="sigbox"></div></td></tr>
-        <tr style="height:24px"><td>支払い予定日：<span contenteditable></span>　月　日</td></tr>
+        <tr style="height:24px"><td>支払い予定日：<span data-report-field></span>　月　日</td></tr>
         <tr style="height:44px"><td class="center">本作業にて検収完了と致します。<br>☐ 作業完了　☐ 未完了</td></tr>
         <tr><td class="company"><b>株式会社　小林機械</b><br>群馬県館林市赤生田本町3831-2<br>TEL:(0276)74-4406<br>FAX:(0276)74-6731</td></tr>
       </table>
@@ -1346,14 +1343,14 @@ function workTableSheet(days, wk){
     <div class="colR">
       <table class="rep" style="table-layout:fixed">${colg45}
         <tr><th colspan="11">機械メーカー</th><th colspan="7">機種</th><th colspan="9">機械番号</th><th colspan="10">年式</th><th colspan="8">高コン</th></tr>
-        <tr><td colspan="11" class="ctr" contenteditable></td><td colspan="7" class="ctr" contenteditable></td><td colspan="9" class="ctr" contenteditable></td><td colspan="10" class="ctr" contenteditable></td><td colspan="8" class="ctr" contenteditable></td></tr>
+        <tr><td colspan="11" class="ctr" data-report-field></td><td colspan="7" class="ctr" data-report-field></td><td colspan="9" class="ctr" data-report-field></td><td colspan="10" class="ctr" data-report-field></td><td colspan="8" class="ctr" data-report-field></td></tr>
         <tr><td colspan="11"></td><th colspan="7">作業時間</th><th colspan="15">作業者・時間</th><th colspan="4">バーコード</th><td colspan="8"></td></tr>
-        <tr><th colspan="4">日付</th><th colspan="7">内容</th><th colspan="7">時間帯</th><th colspan="3">${esc(w4[0])}</th><th colspan="3">${esc(w4[1])}</th><th colspan="3">${esc(w4[2])}</th><th colspan="3">${esc(w4[3])}</th><th colspan="3">合計</th><td class="lbl" colspan="4">作業費</td><td class="num rc" colspan="8" contenteditable></td></tr>
+        <tr><th colspan="4">日付</th><th colspan="7">内容</th><th colspan="7">時間帯</th><th colspan="3">${esc(w4[0])}</th><th colspan="3">${esc(w4[1])}</th><th colspan="3">${esc(w4[2])}</th><th colspan="3">${esc(w4[3])}</th><th colspan="3">合計</th><td class="lbl" colspan="4">作業費</td><td class="num rc" colspan="8" data-report-field></td></tr>
         ${body}
         <tr><td colspan="27"></td><td class="lbl" colspan="3">合計</td><td class="num" colspan="3"></td><td class="lbl" colspan="4">合計</td><td class="num" colspan="8"></td></tr>
-        <tr class="dl2"><td class="lbll vtop" colspan="9">不具合内容：</td><td colspan="36" class="vtop" contenteditable></td></tr>
-        <tr class="dl2"><td class="lbll vtop" colspan="9">原因：</td><td colspan="36" class="vtop" contenteditable></td></tr>
-        <tr class="dl2"><td class="lbll vtop" colspan="9">処置：</td><td colspan="36" class="vtop" contenteditable></td></tr>
+        <tr class="dl2"><td class="lbll vtop" colspan="9">不具合内容：</td><td colspan="36" class="vtop" data-report-field></td></tr>
+        <tr class="dl2"><td class="lbll vtop" colspan="9">原因：</td><td colspan="36" class="vtop" data-report-field></td></tr>
+        <tr class="dl2"><td class="lbll vtop" colspan="9">処置：</td><td colspan="36" class="vtop" data-report-field></td></tr>
         <tr class="dl dlf"><td colspan="38" class="lft vtop">部品詳細：</td><td class="lbl" colspan="2">合計</td><td class="num" colspan="5"></td></tr>
         <tr class="dl dlf"><td colspan="38" class="lft vtop">交通費詳細：</td><td class="lbl" colspan="2">合計</td><td class="num" colspan="5"></td></tr>
         <tr class="dl dlf"><td colspan="38" class="lft vtop">宿泊費詳細：</td><td class="lbl" colspan="2">合計</td><td class="num" colspan="5"></td></tr>
@@ -1364,7 +1361,7 @@ function workTableSheet(days, wk){
 }
 /* 行・列の大きさは変えず、はみ出すセルの文字だけ縮小 */
 function fitCells(root){ if(!root)return;
-  root.querySelectorAll(".rp .wb td, .rp .dl2 td[contenteditable], .rp .dlf .lft, .rp .ctr").forEach(td=>{
+  root.querySelectorAll(".rp .wb td, .rp .dl2 td[data-report-field], .rp .dlf .lft, .rp .ctr").forEach(td=>{
     td.style.fontSize=""; const cw=td.clientWidth; if(!cw)return; let fs=parseFloat(getComputedStyle(td).fontSize)||11, guard=0;
     while(td.scrollWidth>cw+1 && fs>6 && guard<30){ fs-=0.5; td.style.fontSize=fs+"px"; guard++; }
   });
