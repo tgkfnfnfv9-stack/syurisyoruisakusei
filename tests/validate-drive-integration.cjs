@@ -110,7 +110,7 @@ assert.doesNotMatch(reportDriveCard[0], /id="driveLoginBtn"/);
 assert.doesNotMatch(estimate, /\.drive-card\{\s*border-color:/);
 assert.doesNotMatch(report, /\.drive-card\{\s*border-color:/);
 assert.match(estimateApp, /<div class="k">見積番号<\/div><div class="v">\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
-assert.match(reportApp, /<div class="k">見積番号<\/div><div class="v" contenteditable>\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
+assert.match(reportApp, /<div class="k">見積番号<\/div><div class="v" data-report-field>\$\{esc\(\$\("mKocon"\)\.value\.trim\(\)\)\}<\/div>/);
 assert.match(estimateApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fields\.estNo/);
 assert.match(reportApp, /if\(!fields\.mKocon&&fields\.estNo\)fields\.mKocon=fields\.estNo/);
 assert.match(estimateApp, /const kocon=\(\$\("mKocon"\)\.value\|\|""\)\.trim\(\)/);
