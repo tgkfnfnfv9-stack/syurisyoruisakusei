@@ -995,8 +995,9 @@ function recalc(){ let sub=0; document.querySelectorAll("#tbody .item-row .c-amt
   if($("subCell")){$("subCell").textContent=num(sub);$("taxCell").textContent=num(tax);$("totalCell").textContent=num(total);$("topTotal").textContent=yen(total);} }
 function addBlankRow(){ if(!$("tbody")||$("sheet").querySelector(".empty"))renderSheet(); const tb=$("tbody"),nr=$("noteRow"); const tmp=document.createElement("tbody"); tmp.innerHTML=itemRowHTML("","","0"); const tr=tmp.firstElementChild; tb.insertBefore(tr,nr); bindItemRow(tr); renumberRows(); recalc(); }
 
-// 旧データの直接修正内容は表示・再保存のみ対応し、プレビューからは編集しない。
+// 旧データの直接修正内容は閲覧用に保持し、対応する入力内容が変わったら解除する。
 let _reportDirectEdits={};
+let _reportGeneratedValues={};
 let _reportLegacyMigration=false;
 function reportEditableText(el){ return el&&typeof el.innerText==="string"?el.innerText:(el&&el.textContent)||""; }
 function assignReportFieldKeys(){ const pages=[$("sheet"),...(($("sheetExtra")&&[...$("sheetExtra").querySelectorAll(".sheet")])||[])].filter(Boolean);
@@ -1005,7 +1006,10 @@ function assignReportFieldKeys(){ const pages=[$("sheet"),...(($("sheetExtra")&&
     page.querySelectorAll("[data-report-field]").forEach((el,index)=>{ const workRow=el.closest(".wb"); let key;
       if(workRow){ const rowIndex=workRows.indexOf(workRow),workId=workIds[rowIndex]||("empty:"+pageKey+":"+rowIndex),cellIndex=[...workRow.querySelectorAll("[data-report-field]")].indexOf(el); key="work:"+workId+":workers:"+workerKey+":cell:"+cellIndex; }
       else key=pageKey+":static:"+[...page.querySelectorAll("[data-report-field]:not(.wb [data-report-field])")].indexOf(el);
-      el.dataset.editKey=key; el.dataset.legacyEditKey="page:"+pageIndex+":edit:"+index; el.dataset.generatedValue=reportEditableText(el);
+      const generatedValue=reportEditableText(el);
+      if(Object.prototype.hasOwnProperty.call(_reportGeneratedValues,key)&&_reportGeneratedValues[key]!==generatedValue)delete _reportDirectEdits[key];
+      _reportGeneratedValues[key]=generatedValue;
+      el.dataset.editKey=key; el.dataset.legacyEditKey="page:"+pageIndex+":edit:"+index;
     });
   }); }
 function captureReportDirectEdits(){ return {..._reportDirectEdits}; }
@@ -1065,7 +1069,7 @@ function applyState(raw){ if(!raw)return; const s=validateReportState(raw); _doc
   const workRows=normalizeWorkRows(s.work); const incomingWorkers=Array.isArray(s.workers)?s.workers:[]; const workWorkers=workRows.flatMap(w=>w.people.map(p=>p.worker).filter(Boolean));
   WORKERS=[...new Set([...DEFAULT_WORKERS,...WORKERS,...incomingWorkers,...workWorkers])]; saveWorkers();
   ACTIVE = (Array.isArray(s.activeWorkers)&&s.activeWorkers.length) ? s.activeWorkers.filter(w=>WORKERS.includes(w)) : [...new Set(workWorkers)];
-  renderWorkerPick(); _reportDirectEdits=migrateLegacyReportEdits(s);
+  renderWorkerPick(); _reportDirectEdits=migrateLegacyReportEdits(s); _reportGeneratedValues={};
   Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
