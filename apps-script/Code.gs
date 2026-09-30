@@ -10,6 +10,7 @@ const KKMT_CONFIG = Object.freeze({
   sharedPin: "ad5d1bc7",
   rootFolderName: "小林機械 書類データ",
   estimateFolderName: "見積もり",
+  legacyEstimateFolderName: "見積書",
   reportFolderName: "報告書",
   schemaVersion: "2"
 });
@@ -223,27 +224,36 @@ function readFileData_(file) {
 }
 
 function listDocuments_(docType) {
-  const folder = getDocumentFolder_(docType);
-  const files = folder.getFiles();
-  const documents = [];
-  while (files.hasNext()) {
-    const file = files.next();
-    if (!/\.json$/i.test(file.getName())) continue;
-    const data = readFileData_(file);
-    if (!data) continue;
-    const stampedType = normalize_(data._kkmtDocumentType);
-    if (stampedType && stampedType !== docType) continue;
-    const identity = identityFromData_(data);
-    documents.push({
-      file: file,
-      data: data,
-      kocon: identity.kocon,
-      subject: identity.subject,
-      updatedAt: file.getLastUpdated().getTime()
-    });
+  const folders = [{ folder: getDocumentFolder_(docType), legacy: false }];
+  if (docType === "estimate") {
+    const root = getOrCreateFolder_(DriveApp.getRootFolder(), KKMT_CONFIG.rootFolderName);
+    const legacyFolders = root.getFoldersByName(KKMT_CONFIG.legacyEstimateFolderName);
+    while (legacyFolders.hasNext()) folders.push({ folder: legacyFolders.next(), legacy: true });
   }
+  const documents = [];
+  folders.forEach(function (entry) {
+    const files = entry.folder.getFiles();
+    while (files.hasNext()) {
+      const file = files.next();
+      if (!/\.json$/i.test(file.getName())) continue;
+      const data = readFileData_(file);
+      if (!data) continue;
+      const stampedType = normalize_(data._kkmtDocumentType);
+      if (stampedType && stampedType !== docType) continue;
+      const identity = identityFromData_(data);
+      documents.push({
+        file: file,
+        data: data,
+        kocon: identity.kocon,
+        subject: identity.subject,
+        legacy: entry.legacy,
+        updatedAt: file.getLastUpdated().getTime()
+      });
+    }
+  });
   return documents.sort(function (a, b) {
-    return b.updatedAt - a.updatedAt;
+    // Prefer current-folder files when old duplicate documents also exist.
+    return Number(a.legacy) - Number(b.legacy) || b.updatedAt - a.updatedAt;
   });
 }
 
@@ -258,9 +268,11 @@ function findDocument_(docType, kocon, subject) {
     return byKocon || null;
   }
   if (normalizedSubject) {
-    const matches = documents.filter(function (document) {
+    let matches = documents.filter(function (document) {
       return document.subject === normalizedSubject;
     });
+    const currentMatches = matches.filter(function (document) { return !document.legacy; });
+    if (currentMatches.length) matches = currentMatches;
     return matches.find(function (document) { return !document.kocon; }) || matches[0] || null;
   }
   return null;
@@ -326,6 +338,8 @@ function saveDocument_(request) {
     let file;
     if (existing) {
       file = existing.file;
+      // Preserve the file identity and revision history when adopting old estimates.
+      if (existing.legacy) file.moveTo(folder);
       file.setName(name);
       file.setContent(json);
     } else {

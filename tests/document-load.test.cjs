@@ -35,8 +35,8 @@ for (const [file, type] of [["見積書.html", "estimate"], ["報告書メーカ
     isValidSignatureData: value => value === "", normalizeWorkRows: rows => rows,
     DEFAULT_WORKERS: [], WORKERS: [], ACTIVE: [], saveWorkers: noop,
     renderWorkerPick: noop, migrateLegacyReportEdits: () => ({}),
-    addWorkRow: noop, mainPad: null, sigDataURL: "", updateSigState: noop,
-    syncSameState: noop, refreshDirect: noop, renderReport: noop
+    addWorkRow: noop, mainPad: null, sigDataURL: "", updateSigState: noop, setReportSignature: noop,
+    syncSameState: noop, refreshDirect: noop, renderReport: noop, invalidateRouteRequests: noop, _routeGeneration: 0
   };
   vm.createContext(ctx);
   vm.runInContext(html.slice(validationStart, validationEnd) + "\n" + html.slice(applyStart, applyEnd), ctx);

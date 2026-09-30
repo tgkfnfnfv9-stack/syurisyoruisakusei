@@ -271,6 +271,25 @@ vm.runInNewContext(
   assert.equal(promotedByController._kkmtRevision, 2);
   assert.equal(promotedByController.fields.subject, promotionSubject);
 
+  // Adding a number immediately after a title change still updates the same
+  // subject-only estimate, even before the title's debounce save has run.
+  const quickTitle = "番号追加前の件名";
+  const quickBase = await drive.saveJson({ docType: "estimate", subject: quickTitle,
+    data: { fields: { mKocon: "", subject: quickTitle }, wdays: [] }, expectedRevision: 0 });
+  let quickState = { fields: { mKocon: "", subject: quickTitle }, wdays: [], _kkmtRevision: quickBase.revision };
+  const quickKoconInput = { value: "", disabled: false }, quickSubjectInput = { value: quickTitle };
+  const quickController = drive.createAutosaveController({
+    docType: "estimate", rootElement: { addEventListener() {} }, koconInput: quickKoconInput, fallbackInput: quickSubjectInput,
+    statusElement: { textContent: "", classList: { toggle() {} } }, connectButton: { textContent: "", disabled: false },
+    collectState: () => clone(quickState), onSavedRevision: revision => { quickState._kkmtRevision = revision; },
+    onKoconConfirmed: () => ({ confirmed: true, revision: quickState._kkmtRevision, loaded: false })
+  });
+  quickState.fields.subject = quickSubjectInput.value = "番号追加後の件名";
+  quickState.fields.mKocon = quickKoconInput.value = "quick-promotion";
+  await quickController.confirmCurrentKocon({ save: true });
+  assert.equal(findRecord("estimate", "quick-promotion", "").data._kkmtRevision, quickBase.revision + 1);
+  assert.equal(findRecord("estimate", "", quickTitle), null);
+
   const makeInput = value => ({ value, disabled: false, type: "text", addEventListener() {} });
   const makeStatus = () => ({ textContent: "", classList: { toggle() {} } });
   const makeButton = () => ({ textContent: "", disabled: false, addEventListener() {} });
@@ -388,6 +407,34 @@ vm.runInNewContext(
   assert.equal(pendingState._kkmtRevision, pendingRemote.revision + 1);
   assert.equal(localStorage.getItem(pendingKey), null);
 
+  // A stale local draft must not inherit the revision of a newer pending edit,
+  // otherwise the next field change could silently overwrite the recovered edit.
+  const staleDraftId = "stale-local-draft";
+  const staleDraftBase = await drive.saveJson({ kocon: staleDraftId, subject: "古い下書き", docType: "estimate",
+    data: { fields: { mKocon: staleDraftId, subject: "古い下書き" }, wdays: [], version: 1 }, expectedRevision: 0 });
+  let staleDraftState = { fields: { mKocon: staleDraftId, subject: "古い下書き" }, wdays: [], version: 1, _kkmtRevision: staleDraftBase.revision };
+  const staleDraftKey = "kkmt_drive_pending_estimate_k_" + staleDraftId;
+  localStorage.setItem(staleDraftKey, JSON.stringify({ docType: "estimate", kocon: staleDraftId, subject: "古い下書き",
+    expectedRevision: staleDraftBase.revision, json: JSON.stringify({ ...staleDraftState, version: 2 }) }));
+  const staleDraftStatus = makeStatus();
+  let staleDraftLookups = 0;
+  const staleDraftController = drive.createAutosaveController({
+    docType: "estimate", rootElement: { addEventListener() {} }, koconInput: makeInput(staleDraftId), fallbackInput: makeInput("古い下書き"),
+    statusElement: staleDraftStatus, connectButton: makeButton(), collectState: () => clone(staleDraftState),
+    onSavedRevision: revision => { staleDraftState._kkmtRevision = revision; },
+    onKoconConfirmed: () => { staleDraftLookups += 1; }, skipInitialLoad: true
+  }).init();
+  await waitForAsyncInit();
+  assert.equal(findRecord("estimate", staleDraftId, "").data.version, 2);
+  assert.equal(staleDraftState._kkmtRevision, staleDraftBase.revision, "unrelated pending content must not rebase a stale UI");
+  assert.match(staleDraftStatus.textContent, /下書きと内容が異なります/);
+  assert.equal(staleDraftLookups, 0);
+  staleDraftState.fields.notes = "その後の入力";
+  await staleDraftController.markDirty({ immediate: true });
+  assert.equal(findRecord("estimate", staleDraftId, "").data.version, 2, "new edit on stale UI cannot overwrite recovered pending content");
+  assert.notEqual(localStorage.getItem(staleDraftKey), null);
+  localStorage.removeItem(staleDraftKey);
+
   const conflictKocon = "pending-conflict";
   const conflictV1 = await drive.saveJson({
     kocon: conflictKocon, subject: "未同期競合", docType: "estimate",
@@ -485,6 +532,67 @@ vm.runInNewContext(
   const onlyOfflineKey = offlineStorage.key(0);
   assert.match(onlyOfflineKey, /k_offline-777/);
   assert.doesNotMatch(onlyOfflineKey, /s_/);
+
+  // A subject-only document keeps its Drive identity through repeated offline
+  // edits, further renames, and a page reload before synchronization.
+  const originalSubject = "保存済み・旧件名";
+  const originalSave = await drive.saveJson({ docType: "estimate", subject: originalSubject,
+    data: { fields: { mKocon: "", subject: originalSubject }, wdays: [], version: 1 }, expectedRevision: 0 });
+  let renamedState = { fields: { mKocon: "", subject: originalSubject }, wdays: [], version: 1, _kkmtRevision: originalSave.revision };
+  const renamedInput = makeInput(""), renamedSubject = makeInput(originalSubject);
+  const renamedOptions = {
+    docType: "estimate", rootElement: { addEventListener() {} }, koconInput: renamedInput,
+    fallbackInput: renamedSubject, statusElement: makeStatus(), connectButton: makeButton(),
+    collectState: () => clone(renamedState)
+  };
+  const renamedController = offlineDrive.createAutosaveController(renamedOptions);
+  renamedState.fields.subject = renamedSubject.value = "保存済み・新件名";
+  await renamedController.markDirty({ immediate: true });
+  renamedState.version = 2;
+  await renamedController.markDirty({ immediate: true });
+  let renamedKey = "kkmt_drive_pending_estimate_s_" + encodeURIComponent(renamedSubject.value);
+  assert.equal(JSON.parse(offlineStorage.getItem(renamedKey)).previousSubject, originalSubject);
+  const oldRenamedKey = renamedKey;
+  renamedState.fields.subject = renamedSubject.value = "保存済み・最終件名";
+  await renamedController.markDirty({ immediate: true });
+  renamedKey = "kkmt_drive_pending_estimate_s_" + encodeURIComponent(renamedSubject.value);
+  assert.equal(offlineStorage.getItem(oldRenamedKey), null);
+  const restartedRenameController = offlineDrive.createAutosaveController(renamedOptions);
+  renamedState.version = 3;
+  await restartedRenameController.markDirty({ immediate: true });
+  const renamedPending = JSON.parse(offlineStorage.getItem(renamedKey));
+  assert.equal(renamedPending.previousSubject, originalSubject);
+  localStorage.setItem(renamedKey, JSON.stringify(renamedPending));
+  const renamedResults = await drive.flushPending("estimate");
+  assert.equal(renamedResults.find(entry => entry.item.subject === renamedSubject.value).ok, true);
+  assert.equal(findRecord("estimate", "", originalSubject), null);
+  assert.equal(findRecord("estimate", "", renamedSubject.value).data.version, 3);
+  offlineStorage.removeItem(renamedKey);
+
+  // Live autosave responses have the same replacement protection as pending
+  // synchronization: neither success nor failure may remove a newer draft.
+  for (const shouldFail of [false, true]) {
+    const id = "live-pending-" + (shouldFail ? "failure" : "success");
+    const key = "kkmt_drive_pending_report_k_" + id;
+    let liveState = { fields: { mKocon: id, subject: "保存中" }, work: [], version: 1, _kkmtRevision: 0 };
+    const initialPending = { docType: "report", kocon: id, subject: "保存中", expectedRevision: 0, json: JSON.stringify(liveState) };
+    const newerPending = { ...initialPending, json: JSON.stringify({ ...liveState, version: 2 }) };
+    localStorage.setItem(key, JSON.stringify(initialPending));
+    beforePost = async request => {
+      if (request.kocon !== id) return;
+      localStorage.setItem(key, JSON.stringify(newerPending));
+      if (shouldFail) throw new Error("offline");
+    };
+    const liveController = drive.createAutosaveController({
+      docType: "report", rootElement: { addEventListener() {} }, koconInput: makeInput(id), fallbackInput: makeInput("保存中"),
+      statusElement: makeStatus(), connectButton: makeButton(), collectState: () => clone(liveState),
+      onSavedRevision: revision => { liveState._kkmtRevision = revision; }
+    });
+    await liveController.markDirty({ immediate: true });
+    assert.deepEqual(JSON.parse(localStorage.getItem(key)), newerPending, "newer pending draft must survive an old response");
+    beforePost = async () => {};
+    localStorage.removeItem(key);
+  }
 
 
   // Loading must finish while an old save or startup flush is still blocked.
@@ -597,6 +705,37 @@ vm.runInNewContext(
   assert.equal(lookupState._kkmtRevision, 9);
   assert.equal(lookupInput.disabled, false);
   localStorage.removeItem("kkmt_drive_pending_estimate_k_lookup-old");
+
+  // Rejected files and failed renderers must resume the preceding document's
+  // in-flight save, including its revision, rather than causing a false conflict.
+  for (const failure of ["read", "apply"]) {
+    const id = "failed-load-save-" + failure;
+    let state = { fields: { mKocon: id, subject: "読み込み前" }, wdays: [], version: 1, _kkmtRevision: 0 };
+    const apply = data => { state = clone(data); };
+    const ctl = drive.createAutosaveController({
+      docType: "estimate", rootElement: { addEventListener() {} }, koconInput: makeInput(id), fallbackInput: makeInput("読み込み前"),
+      statusElement: makeStatus(), connectButton: makeButton(), collectState: () => clone(state), restoreState: apply,
+      onSavedRevision: revision => { state._kkmtRevision = revision; }
+    });
+    let release, started;
+    const entered = new Promise(resolve => { started = resolve; });
+    const blocked = new Promise(resolve => { release = resolve; });
+    beforePost = async request => { if (request.kocon === id) { started(); await blocked; } };
+    const saving = ctl.markDirty({ immediate: true });
+    await entered;
+    await assert.rejects(() => ctl.loadDocument({
+      load: async () => { if (failure === "read") throw new Error("invalid JSON"); return { fields: { mKocon: id }, wdays: [], version: 99 }; },
+      apply: data => { apply(data); throw new Error("render failed"); }
+    }), failure === "read" ? /invalid JSON/ : /render failed/);
+    release(); await saving;
+    beforePost = async () => {};
+    assert.equal(state._kkmtRevision, 1);
+    assert.equal(state.version, 1);
+    state.version = 2;
+    await ctl.markDirty({ immediate: true });
+    assert.equal(findRecord("estimate", id, "").data.version, 2, "the next edit must save without a false revision conflict");
+    localStorage.removeItem("kkmt_drive_pending_estimate_k_" + id);
+  }
 
   console.log("Central Drive client checks passed.");
 })().catch(error => {

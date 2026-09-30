@@ -764,10 +764,16 @@
     });
   }
 
-  function removePending(docType, kocon, subject) {
+  function removePending(docType, kocon, subject, capturedValues) {
     try {
-      if (normalizeKocon(kocon)) localStorage.removeItem(pendingKey(docType, kocon, ""));
-      if (normalizeSubject(subject)) localStorage.removeItem(pendingKey(docType, "", subject));
+      const keys = [];
+      if (normalizeKocon(kocon)) keys.push(pendingKey(docType, kocon, ""));
+      if (normalizeSubject(subject)) keys.push(pendingKey(docType, "", subject));
+      for (const key of keys) {
+        // A different tab can queue newer content while a request is in flight.
+        if (capturedValues && (!capturedValues.has(key) || capturedValues.get(key) !== localStorage.getItem(key))) continue;
+        localStorage.removeItem(key);
+      }
     } catch (_) {}
   }
 
@@ -836,6 +842,7 @@
 
     let activeKocon = normalizeKocon(koconInput && koconInput.value);
     let activeSubject = normalizeSubject(fallbackInput && fallbackInput.value);
+    let savedSubject = activeSubject;
     let timer = null;
     let saveRequested = false;
     let savingPromise = null;
@@ -844,6 +851,14 @@
     let syncPromise = null;
     let documentEpoch = 0;
     let loading = false;
+
+    function restorePendingSubject() {
+      const pending = readJsonStorage(pendingKey(docType, activeKocon, activeSubject), null);
+      if (pending && pending.docType === docType && Number(pending.expectedRevision) === activeRevision && pending.previousSubject) {
+        savedSubject = normalizeSubject(pending.previousSubject);
+      }
+    }
+    restorePendingSubject();
 
     function setStatus(message, state) {
       if (!statusElement) return;
@@ -856,11 +871,39 @@
       const kocon = normalizeKocon(koconInput && koconInput.value);
       const subject = normalizeSubject(fallbackInput && fallbackInput.value);
       const data = collectState();
-      return { kocon, subject, previousSubject: activeSubject, data, expectedRevision: activeRevision, json: documentJson(data) };
+      const pendingValues = new Map();
+      try {
+        const keys = new Set([
+          pendingKey(docType, kocon, subject),
+          pendingKey(docType, "", subject),
+          pendingKey(docType, "", activeSubject),
+          pendingKey(docType, "", savedSubject)
+        ]);
+        for (const key of keys) pendingValues.set(key, localStorage.getItem(key));
+      } catch (_) {}
+      return { kocon, subject, previousSubject: savedSubject, previousPendingSubject: activeSubject, data,
+        expectedRevision: activeRevision, json: documentJson(data), pendingValues };
     }
 
     function snapshotKey(current) {
       return current.kocon ? `k:${current.kocon}` : (current.subject ? `s:${current.subject}` : "");
+    }
+
+    function queueSnapshot(current) {
+      const key = pendingKey(docType, current.kocon, current.subject);
+      try {
+        // Preserve a newer draft queued after this snapshot instead of replacing it.
+        if (current.pendingValues.has(key) && current.pendingValues.get(key) !== localStorage.getItem(key)) return true;
+      } catch (_) {}
+      const stored = storePending(docType, current.kocon, current.subject, current.previousSubject,
+        current.data, current.json, current.expectedRevision);
+      if (stored) {
+        if (current.previousPendingSubject && (current.kocon || current.previousPendingSubject !== current.subject)) {
+          removePending(docType, "", current.previousPendingSubject, current.pendingValues);
+        }
+        activeSubject = current.subject;
+      }
+      return stored;
     }
 
     async function saveLoop() {
@@ -887,19 +930,12 @@
             continue;
           }
           if (!isConnected()) {
-            const stored = storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json, current.expectedRevision);
-            if (stored) {
-              if (current.previousSubject &&
-                  (current.kocon || current.previousSubject !== current.subject)) {
-                removePending(docType, "", current.previousSubject);
-              }
-              activeSubject = current.subject;
-            }
+            const stored = queueSnapshot(current);
             setStatus(stored ? "共通Drive未接続（端末内へ一時保存済み）" : "共通Drive未接続（端末内への保存に失敗）", stored ? "" : "error");
             continue;
           }
           if (lastSavedJson.get(currentKey) === current.json) {
-            removePending(docType, current.kocon, current.subject);
+            removePending(docType, current.kocon, current.subject, current.pendingValues);
             continue;
           }
           setStatus(`${label}を共通Driveへ保存中…`);
@@ -918,9 +954,13 @@
             if (onSavedRevision) await onSavedRevision(activeRevision);
             lastSavedJson.set(currentKey, current.json);
             activeSubject = current.subject;
-            removePending(docType, current.kocon, current.subject);
+            savedSubject = current.subject;
+            removePending(docType, current.kocon, current.subject, current.pendingValues);
             if (current.previousSubject && current.previousSubject !== current.subject) {
-              removePending(docType, "", current.previousSubject);
+              removePending(docType, "", current.previousSubject, current.pendingValues);
+            }
+            if (current.previousPendingSubject && current.previousPendingSubject !== current.subject) {
+              removePending(docType, "", current.previousPendingSubject, current.pendingValues);
             }
             const time = new Intl.DateTimeFormat("ja-JP", {
               hour: "2-digit",
@@ -930,14 +970,14 @@
             setStatus(`${label}を自動保存しました ${time}`, "ok");
           } catch (error) {
             if (epoch !== documentEpoch) break;
-            if (!skipPagehideSave) storePending(docType, current.kocon, current.subject, current.previousSubject, current.data, current.json, current.expectedRevision);
+            const stored = !skipPagehideSave && queueSnapshot(current);
             if (error instanceof DriveError && error.status === 401) {
               connectButton.textContent = "共通Driveに接続";
               setStatus("接続期限が切れました。再接続してください（端末内へ一時保存済み）", "error");
             } else if (error instanceof DriveError && error.status === 409) {
               setStatus("他の端末で更新されています。Driveから最新データを読み込んでください（端末内の変更は保持中）", "error");
             } else {
-              setStatus("保存に失敗しました。端末内へ一時保存しました", "error");
+              setStatus(stored ? "保存に失敗しました。端末内へ一時保存しました" : "保存に失敗しました。端末内への一時保存にも失敗しました。データ保存で控えを保存してください。", "error");
             }
             console.error("Central Drive autosave failed", error);
           }
@@ -980,9 +1020,7 @@
         const previous = activeKocon;
         const previousConfirmed = confirmedKocon;
         const previousRevision = activeRevision;
-        const nextSubject = normalizeSubject(fallbackInput && fallbackInput.value);
-        const isSubjectPromotion = docType === "estimate" && !previous && !!next &&
-          !!activeSubject && nextSubject === activeSubject;
+        const isSubjectPromotion = docType === "estimate" && !previous && !!next;
         let identityHookRan = false;
         koconInput.value = next;
 
@@ -1075,6 +1113,7 @@
             const loadedSnapshot = snapshot();
             lastSavedJson.set(snapshotKey(loadedSnapshot), loadedSnapshot.json);
             activeSubject = loadedSnapshot.subject;
+            savedSubject = loadedSnapshot.subject;
           }
         }
 
@@ -1092,9 +1131,11 @@
       koconInput.value = current;
       activeKocon = current;
       activeSubject = normalizeSubject(fallbackInput && fallbackInput.value);
+      savedSubject = activeSubject;
       confirmedKocon = confirmed ? current : "";
       const adoptedRevision = revision == null ? documentRevision(collectState()) : Number(revision);
       activeRevision = Number.isSafeInteger(adoptedRevision) && adoptedRevision >= 0 ? adoptedRevision : 0;
+      restorePendingSubject();
       if (onSavedRevision) onSavedRevision(activeRevision);
       return save ? markDirty({ immediate: true }) : Promise.resolve();
     }
@@ -1102,6 +1143,8 @@
     async function loadDocument({ load, apply, message, synced = false }) {
       if (loading) return false;
       const previous = snapshot();
+      const previousEpoch = documentEpoch;
+      let restoreSnapshot = previous;
       // Preserve the outgoing draft without waiting for network I/O.
       if (snapshotKey(previous) && lastSavedJson.get(snapshotKey(previous)) !== previous.json) {
         if (!storePending(docType, previous.kocon, previous.subject, previous.previousSubject,
@@ -1110,7 +1153,6 @@
         }
       }
       loading = true;
-      ++documentEpoch;
       skipNextInitialLoad = false;
       saveRequested = false;
       clearTimeout(timer);
@@ -1127,6 +1169,10 @@
           await Promise.all([savingPromise, syncPromise].filter(Boolean).map(promise => promise.catch(() => {})));
         }
         const data = await load();
+        // Reading or validating a rejected file must not discard the revision
+        // of a save that completed while that file was being read.
+        restoreSnapshot = snapshot();
+        ++documentEpoch;
         // apply must validate before changing the form and complete synchronously.
         applying = true;
         apply(data);
@@ -1140,8 +1186,9 @@
         return true;
       } catch (error) {
         if (applying && options.restoreState) {
-          options.restoreState(previous.data);
-          await adoptCurrentKocon({ save: false, revision: previous.expectedRevision });
+          documentEpoch = previousEpoch;
+          options.restoreState(restoreSnapshot.data);
+          await adoptCurrentKocon({ save: false, revision: restoreSnapshot.expectedRevision });
         }
         setStatus(error.message || "読み込みに失敗しました。", "error");
         throw error;
@@ -1170,7 +1217,7 @@
       removePending(docType, current, subject);
     }
 
-    async function adoptFlushedRevision(results) {
+    async function adoptFlushedRevision(results, startingSnapshot) {
       const currentKocon = normalizeKocon(koconInput && koconInput.value);
       const currentSubject = normalizeSubject(fallbackInput && fallbackInput.value);
       const synced = results.filter(entry => entry.ok && entry.result && Number.isSafeInteger(Number(entry.result.revision))).find(entry =>
@@ -1178,13 +1225,28 @@
         (!currentKocon && currentSubject && normalizeSubject(entry.item.subject) === currentSubject)
       );
       if (!synced) return;
+      const pendingData = synced.item.data || JSON.parse(synced.item.json);
+      const pendingJson = documentJson(pendingData);
+      const current = snapshot();
+      const startedFromPending = startingSnapshot && snapshotKey(startingSnapshot) === snapshotKey(current) &&
+        startingSnapshot.json === pendingJson;
+      if (current.json !== pendingJson && !startedFromPending) {
+        // A stale local draft must not borrow the revision of different content.
+        // Edits made during synchronization are safe only when they started from
+        // the same pending document that was just saved.
+        const error = new DriveError("端末内の下書きと同期したデータの内容が異なります。", 409);
+        error.localDraftMismatch = true;
+        return { ok: false, item: synced.item, error };
+      }
       activeRevision = Number(synced.result.revision);
+      savedSubject = normalizeSubject(synced.item.subject);
       if (onSavedRevision) await onSavedRevision(activeRevision);
     }
 
     function synchronizePending(initialize = false) {
       if (syncPromise) return syncPromise;
       const epoch = documentEpoch;
+      const startingSnapshot = snapshot();
       const runningSave = savingPromise;
       syncPromise = (async () => {
         if (runningSave) await runningSave;
@@ -1192,13 +1254,19 @@
         else await connect();
         if (!isConnected()) return [];
         const results = await flushPending(docType);
-        if (epoch === documentEpoch) await adoptFlushedRevision(results);
+        if (epoch === documentEpoch) {
+          const adoptionFailure = await adoptFlushedRevision(results, startingSnapshot);
+          if (adoptionFailure) results.push(adoptionFailure);
+        }
         return results;
       })().finally(() => { syncPromise = null; });
       return syncPromise;
     }
 
     function pendingFailureMessage(failures) {
+      if (failures.some(entry => entry.error && entry.error.localDraftMismatch)) {
+        return "未同期データはDriveへ保存しましたが、端末内の下書きと内容が異なります。下書きをJSON保存してからDriveの最新データを読み込んでください。";
+      }
       return failures.some(entry => entry.error && entry.error.status === 409)
         ? "未同期データがDriveの更新と競合しています。端末内の変更は保持しています。Driveの最新データを確認してください。"
         : "未同期データの保存を確認できませんでした。端末内の変更は保持しています。通信環境を確認して再接続してください。";

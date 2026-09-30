@@ -706,7 +706,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260915-2"></script>
+<script src="google-drive.js?v=20260930-audit1"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -729,21 +729,26 @@ const $=id=>document.getElementById(id);
 const yen=n=>"¥"+Math.round(n).toLocaleString("ja-JP");
 const num=n=>Math.round(n).toLocaleString("ja-JP");
 const esc=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const parseNum=s=>parseFloat(String(s).replace(/[^0-9.\-]/g,""))||0;
+const parseNum=s=>{ const text=String(s).trim(),direct=Number(text); if(Number.isFinite(direct))return direct; if(/^[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?$/i.test(text))return 0; const fallback=parseFloat(text.replace(/[^0-9.\-]/g,"")); return Number.isFinite(fallback)?fallback:0; };
 const fmt=n=>{ n=Math.round(n*10)/10; return Number.isInteger(n)?String(n):n.toFixed(1); };
 let driveAutosaveController=null;
+let _routeGeneration=0;
+const _routeRequests=new Map();
+function invalidateRouteRequests(){ _routeGeneration++; _routeRequests.clear(); ["b1","b2","b3"].forEach(p=>{ const button=$(p+"_auto"),status=$(p+"_status"); if(button)button.disabled=false; if(status){status.textContent="";status.className="status";} }); }
+function routeRequestIsCurrent(p,request,checkFields=true){ if(_routeRequests.get(p)!==request||request.generation!==_routeGeneration)return false;
+  return !checkFields||(request.origin===originAddr(p)&&request.dest===$("address").value.trim()&&request.kocon===$("mKocon").value.trim()&&request.values.every((value,i)=>value===$(p+["_km","_h","_toll"][i]).value)); }
 function newRowId(prefix){ return prefix+"_"+Date.now().toString(36)+"_"+Math.random().toString(36).slice(2,10); }
 
 function addPartRow(v){ const row=$("partRow").content.cloneNode(true).querySelector(".prow"); row.dataset.rowId=(v&&v.id)||newRowId("part"); const pc=row.querySelector(".pc"),pa=row.querySelector(".pa"),pq=row.querySelector(".pq");
   pc.addEventListener("input",()=>{ if(pc.value!=="")pa.value=Math.round(parseNum(pc.value)/0.8); });
   row.querySelector(".del").addEventListener("click",()=>row.remove());
-  if(v){ row.querySelector(".pn").value=v.name||""; pc.value=v.cost||""; pa.value=v.excl||""; if(v.qty!=null&&v.qty!=="")pq.value=v.qty; } $("partsList").appendChild(row); }
+  if(v){ row.querySelector(".pn").value=v.name||""; pc.value=v.cost??""; pa.value=v.excl??""; if(v.qty!=null&&v.qty!=="")pq.value=v.qty; } $("partsList").appendChild(row); }
 function partRowsRaw(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>({id:r.dataset.rowId||newRowId("part"),name:r.querySelector(".pn").value,cost:r.querySelector(".pc").value,excl:r.querySelector(".pa").value,qty:r.querySelector(".pq").value})); }
-function getParts(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>{ const name=r.querySelector(".pn").value.trim(),cost=parseNum(r.querySelector(".pc").value); let excl=parseNum(r.querySelector(".pa").value); if(!excl&&cost)excl=Math.round(cost/0.8); const q=Math.max(0,parseNum(r.querySelector(".pq").value))||1; const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {key:"part:"+(r.dataset.rowId||newRowId("part")),name:dispName,amt:excl*q}; }).filter(p=>p.name||p.amt); }
+function getParts(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>{ const name=r.querySelector(".pn").value.trim(),cost=Math.max(0,parseNum(r.querySelector(".pc").value)),rawExcl=r.querySelector(".pa").value; let excl=Math.max(0,parseNum(rawExcl)); if(rawExcl===""&&cost)excl=Math.round(cost/0.8); const rawQty=r.querySelector(".pq").value,q=rawQty===""?1:Math.max(0,parseNum(rawQty)); const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {key:"part:"+(r.dataset.rowId||newRowId("part")),name:dispName,amt:excl*q}; }).filter(p=>p.name||p.amt); }
 function addCustomRow(v){ const row=$("customRow").content.cloneNode(true).querySelector(".crow"); row.dataset.rowId=(v&&v.id)||newRowId("custom"); row.querySelector(".del").addEventListener("click",()=>row.remove());
-  if(v){ row.querySelector(".cn").value=v.name||""; row.querySelector(".ca").value=v.amt||""; const cq=row.querySelector(".cq"); if(v.qty!=null&&v.qty!=="")cq.value=v.qty; } $("customList").appendChild(row); }
+  if(v){ row.querySelector(".cn").value=v.name||""; row.querySelector(".ca").value=v.amt??""; const cq=row.querySelector(".cq"); if(v.qty!=null&&v.qty!=="")cq.value=v.qty; } $("customList").appendChild(row); }
 function customRowsRaw(){ return [...document.querySelectorAll("#customList .crow")].map(r=>({id:r.dataset.rowId||newRowId("custom"),name:r.querySelector(".cn").value,amt:r.querySelector(".ca").value,qty:r.querySelector(".cq").value})); }
-function getCustom(){ return [...document.querySelectorAll("#customList .crow")].map(r=>{ const name=r.querySelector(".cn").value.trim(); const amt=parseNum(r.querySelector(".ca").value); const q=Math.max(0,parseNum(r.querySelector(".cq").value))||1; const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {key:"custom:"+(r.dataset.rowId||newRowId("custom")),name:dispName,amt:amt*q}; }).filter(c=>c.name); }
+function getCustom(){ return [...document.querySelectorAll("#customList .crow")].map(r=>{ const name=r.querySelector(".cn").value.trim(); const amt=Math.max(0,parseNum(r.querySelector(".ca").value)),rawQty=r.querySelector(".cq").value,q=rawQty===""?1:Math.max(0,parseNum(rawQty)); const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {key:"custom:"+(r.dataset.rowId||newRowId("custom")),name:dispName,amt:amt*q}; }).filter(c=>c.name); }
 
 function syncWE(){ recomputeWorkFee(); }
 function syncBase(){ $("b1card").classList.toggle("off",!$("b1_use").checked); $("b2card").classList.toggle("off",!$("b2_use").checked); $("b3card").classList.toggle("off",!$("b3_use").checked); }
@@ -785,11 +790,12 @@ async function autoCalc(p){ const st=$(p+"_status"),key=$("apiKey").value.trim()
   if(!origin){st.textContent="出発地の住所を入力してください。";st.className="status err";return;}
   if(!dest){st.textContent="作業場所の住所を入力してください。";st.className="status err";return;}
   if(!key){st.textContent="APIキーを入力してください（または下のリンクで手入力）。";st.className="status err";return;}
+  const request={generation:_routeGeneration,origin,dest,kocon:$("mKocon").value.trim(),values:["_km","_h","_toll"].map(suffix=>$(p+suffix).value)}; _routeRequests.set(p,request); let applied=false;
   st.textContent="取得中…";st.className="status";$(p+"_auto").disabled=true;
-  try{ const r=await googleRoute(origin,dest,key); $(p+"_km").value=r.km.toFixed(1);$(p+"_h").value=r.h.toFixed(1);$(p+"_toll").value=Math.round(r.toll);
+  try{ const r=await googleRoute(origin,dest,key); if(!routeRequestIsCurrent(p,request))return; $(p+"_km").value=r.km.toFixed(1);$(p+"_h").value=r.h.toFixed(1);$(p+"_toll").value=Math.round(r.toll); applied=true;
     st.innerHTML=`片道約${r.km.toFixed(1)}km／約${r.h.toFixed(1)}h／高速${r.hasToll?yen(r.toll):"なし"}（片道）。`;st.className="status ok";
     scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty();
-  }catch(e){ st.innerHTML="自動取得に失敗（"+esc(e.message)+"）。下のリンクで手入力を。";st.className="status err"; } finally{$(p+"_auto").disabled=false;} }
+  }catch(e){ if(routeRequestIsCurrent(p,request)){st.innerHTML="自動取得に失敗（"+esc(e.message)+"）。下のリンクで手入力を。";st.className="status err";} } finally{ if(routeRequestIsCurrent(p,request,false)){ if(!applied&&!routeRequestIsCurrent(p,request)){st.textContent="";st.className="status";} $(p+"_auto").disabled=false;_routeRequests.delete(p); } } }
 function openMap(p,kind){ const o=originAddr(p),d=$("address").value.trim(); if(!o){alert("出発地の住所を入力してください。");return;} if(!d){alert("作業場所の住所を入力してください。");return;}
   const u=kind==="yahoo"?`https://map.yahoo.co.jp/route/car?from=${encodeURIComponent(o)}&to=${encodeURIComponent(d)}`:`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&travelmode=driving`; window.open(u,"_blank"); }
 
@@ -908,28 +914,50 @@ function validateEstimateState(s){ if(!s||typeof s!=="object"||Array.isArray(s))
   if("directEdits" in s&&(!s.directEdits||typeof s.directEdits!=="object"||Array.isArray(s.directEdits)))throw new Error("直接編集データの形式が正しくありません。");
   if("excludedItemKeys" in s&&!Array.isArray(s.excludedItemKeys))throw new Error("除外項目データの形式が正しくありません。");
   if(!Array.isArray(s.wdays))s.wdays=[]; if(!Array.isArray(s.parts))s.parts=[]; if(!Array.isArray(s.customs))s.customs=[];
+
+  const isScalar=value=>value==null||typeof value==="string"||(typeof value==="number"&&Number.isFinite(value));
+  Object.entries(s.fields).forEach(([key,value])=>{
+    if(!isScalar(value)&&typeof value!=="boolean")throw new Error("入力項目の値形式が正しくありません。");
+    if(typeof initialFieldValues[key]==="boolean"&&value!=null&&typeof value!=="boolean")throw new Error("チェック項目の値形式が正しくありません。");
+  });
+  for(const key of ["parts","customs","lodges","wdays"]){
+    for(const row of s[key]||[]){
+      for(const name of ["id","name","memo","cost","excl","qty","amt","people","nights","hours","night"]){
+        if(name in row&&!isScalar(row[name]))throw new Error(key+" の値形式が正しくありません。");
+      }
+      if("holiday" in row&&typeof row.holiday!=="boolean")throw new Error(key+" の休日指定が正しくありません。");
+    }
+  }
+  if(s.directEdits){
+    const edits=s.directEdits;
+    if("notesByKey" in edits&&(!edits.notesByKey||typeof edits.notesByKey!=="object"||Array.isArray(edits.notesByKey)||Object.values(edits.notesByKey).some(value=>!isScalar(value))))throw new Error("備考データの値形式が正しくありません。");
+    if("notes" in edits&&(!Array.isArray(edits.notes)||edits.notes.some(value=>!isScalar(value))))throw new Error("備考データの値形式が正しくありません。");
+    if("basicName" in edits&&!isScalar(edits.basicName))throw new Error("基本料金欄の値形式が正しくありません。");
+  }
   return s;
 }
 let _documentRevision=0;
 const initialFieldValues={};
 function collectState(){ const directEdits=captureDirectEdits(); const s={documentType:"estimate",schemaVersion:2,_kkmtRevision:_documentRevision,fields:{},parts:partRowsRaw(),customs:customRowsRaw(),wdays:wdayRows(),lodges:lodgeRows(),directEdits,excludedItemKeys:[..._excludedItemKeys]}; SIMPLE_IDS.forEach(id=>{ const el=$(id); if(!el)return; s.fields[id]=el.type==="checkbox"?el.checked:el.value; }); return s; }
-function applyState(raw){ if(!raw)return; const s=validateEstimateState(raw); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); setDirectEdits(migrateLegacyDirectEdits(s)); _excludedItemKeys=new Set(Array.isArray(s.excludedItemKeys)?s.excludedItemKeys.map(String):[]); const fields={...initialFieldValues,...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
+function applyState(raw){ if(!raw)return; const s=validateEstimateState(raw); invalidateRouteRequests(); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); setDirectEdits(migrateLegacyDirectEdits(s)); _excludedItemKeys=new Set(Array.isArray(s.excludedItemKeys)?s.excludedItemKeys.map(String):[]); const fields={...initialFieldValues,...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo; Object.keys(initialFieldValues).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("wdList").innerHTML=""; (s.wdays&&s.wdays.length?s.wdays:[null]).forEach(w=>addWdayRow(w));
   $("lodgeList").innerHTML=""; const _lr=lodgesFromState(s); (_lr.length?_lr:[null]).forEach(l=>addLodgeRow(l)); refreshLodge();
-  syncWE(); syncBase(); renderSheet(false); }
+  if(!Object.prototype.hasOwnProperty.call(s.fields,"workFee"))syncWE(); syncBase(); renderSheet(false); }
 
 /* ===== 自動保存（下書き）：APIキー(kkmt_gkey)は別枠なので消えない ===== */
 const DRAFT_KEY="kkmt_est_draft";
 let _autosaveT=null;
+let _skipDraftOnLeave=false;
 function writeLocalDraftNow(){ clearTimeout(_autosaveT); _autosaveT=null; try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } }
+function flushDraftOnLeave(){ if(!_skipDraftOnLeave)writeLocalDraftNow(); }
 function cancelLocalAutosave(){ clearTimeout(_autosaveT); _autosaveT=null; }
-function cancelPendingFormUpdates(){ cancelLocalAutosave(); clearTimeout(_livePreviewT); }
+function cancelPendingFormUpdates(){ cancelLocalAutosave(); clearTimeout(_livePreviewT); invalidateRouteRequests(); }
 function autosave(){ cancelLocalAutosave(); _autosaveT=setTimeout(writeLocalDraftNow,400); }
 function autosaveFromEvent(event){ const target=event&&event.target; if(target&&target.type==="file")return; autosave(); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
-function resetAll(){ if(!confirm("すべての入力を消去します。APIキーは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
+function resetAll(){ if(!confirm("すべての入力を消去します。APIキーは残ります。よろしいですか？"))return; _skipDraftOnLeave=true; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
 async function searchEstimateFromDrive(){
   const byKocon=$("driveSearchModeKocon").checked;
@@ -1082,6 +1110,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   _app.addEventListener("input",autosaveFromEvent); _app.addEventListener("change",autosaveFromEvent);
   _app.addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&(liveMutationIds.has(b.id)||b.matches(".del,.rowdel")))setTimeout(autosave,0); });
   $("resetAllBtn").addEventListener("click",resetAll);
+  window.addEventListener("pagehide",flushDraftOnLeave);
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden")flushDraftOnLeave(); });
 });
 </script>
 </body>
