@@ -99,6 +99,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 @media print{ @page{ size:A4 landscape; margin:6mm; } body{ background:#fff; } .app{ display:block; height:auto; } .form, .bar{ display:none !important; } .preview{ padding:0; overflow:visible; } .sheet{ box-shadow:none; margin:0; } .rowdel{ display:none !important; } .sheet [contenteditable]:hover,.sheet [contenteditable]:focus{ background:transparent; box-shadow:none; } }
 @media (max-width:900px){ .app{ grid-template-columns:1fr; height:auto; } .preview{ overflow-x:auto; } }
 </style>
+<link rel="stylesheet" href="preview-zoom.css?v=20260930-zoom1">
 </head>
 <body>
 <div class="app">
@@ -245,7 +246,10 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
   <main class="preview">
     <div class="bar"><span class="tip">通常明細の「備考」と、基本料金一覧と同じ横列にある「品名」枠をクリックして直接編集できます。</span></div>
+    <div class="preview-zoom-tools"><span>ホイール / 2本指で拡大・縮小</span><output data-preview-zoom-status aria-label="プレビューの表示倍率">100%</output></div>
+    <div class="preview-zoom-stage"><div class="preview-zoom-content">
     <div id="sheet" class="sheet"><div class="empty">左の入力内容が<br>ここに自動反映されます</div></div>
+    </div></div>
   </main>
 </div>
 
@@ -707,6 +711,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
 </script>
 <script src="google-drive.js?v=20260930-audit1"></script>
+<script src="preview-zoom.js?v=20260930-zoom1"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1004,7 +1009,7 @@ async function buildPdf(flush=true){
   fitSheet();
   const el=$("sheet");
   if(!(window.html2canvas && window.jspdf)){ alert("PDF部品の読み込みに失敗しました。ページを開き直してください。"); return null; }
-  const canvas=await html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true,ignoreElements:(e)=>e.classList&&e.classList.contains("rowdel")});
+  const canvas=await html2canvas(el,{scale:2,backgroundColor:"#ffffff",useCORS:true,ignoreElements:(e)=>e.classList&&e.classList.contains("rowdel"),onclone:doc=>{if(window.KKMTPreviewZoom)KKMTPreviewZoom.prepareExport(doc);}});
   const {jsPDF}=window.jspdf;
   const pdf=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
   const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), m=5;
