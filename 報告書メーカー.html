@@ -324,7 +324,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
     <section class="card">
       <h2><span class="n">8</span>作業費・作業者・作業時間</h2>
-      <p class="foot">まず下で<b>作業者を選択</b>すると、各作業行にその人たちが自動で並びます。あとは行ごとに<b>時間だけ</b>入力（空欄・0の人はPDFに出ません）。1人1日あたり：3hまで45,000／3〜8hは+9,000/h／<b>8h超は+10,800/h</b>、土日祝は×1.5（祝日は自動判定）。</p>
+      <p class="foot">まず下で<b>作業者を選択</b>すると、各作業行にその人たちが自動で並びます。あとは行ごとに<b>時間だけ</b>入力（空欄・0の人はPDFに出ません）。見積取込の「作業者未設定」は、作業者を選択すると順に引き継がれます。1人1日あたり：3hまで45,000／3〜8hは+9,000/h／<b>8h超は+12,150/h</b>、土日祝は×1.5（祝日は自動判定）。</p>
       <div class="worker-add"><input id="newWorker" type="text" placeholder="作業者名を新規追加"><button id="addWorker">追加</button></div>
       <div style="font-size:13px;color:#556;margin-top:8px;">作業者を選択：</div>
       <div id="workerPick" class="worker-pick"></div>
@@ -845,7 +845,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260915-2"></script>
+<script src="google-drive.js?v=20260930-audit1"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -868,9 +868,13 @@ const $=id=>document.getElementById(id);
 const yen=n=>"¥"+Math.round(n).toLocaleString("ja-JP");
 const num=n=>Math.round(n).toLocaleString("ja-JP");
 const esc=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const parseNum=s=>parseFloat(String(s).replace(/[^0-9.\-]/g,""))||0;
+const parseNum=s=>{const raw=String(s??"").trim(),value=Number(raw);if(!Number.isNaN(value))return Number.isFinite(value)?value:0;const fallback=parseFloat(raw.replace(/[^0-9.\-]/g,""));return Number.isFinite(fallback)?fallback:0;};
 const fmt=n=>{ n=Math.round(n*10)/10; return Number.isInteger(n)?String(n):n.toFixed(1); };
+const hoursText=n=>Math.max(0,parseNum(n)).toLocaleString("ja-JP",{maximumFractionDigits:10});
 let driveAutosaveController=null;
+let _routeGeneration=0;
+const _routeRequests=new Map();
+function invalidateRouteRequests(){_routeGeneration++;_routeRequests.clear();["b1","b2","b3"].forEach(base=>{const button=$(base+"_auto"),status=$(base+"_status");if(button)button.disabled=false;if(status){status.textContent="";status.className="status";}});}
 
 function addLodgeRow(v){ const row=$("lodgeRow").content.cloneNode(true).querySelector(".prow");
   row.querySelector(".del").addEventListener("click",()=>{ row.remove(); refreshLodge(); });
@@ -886,13 +890,13 @@ function lodgesFromState(s){ if(Array.isArray(s.lodges))return s.lodges; const f
 function addPartRow(v){ const row=$("partRow").content.cloneNode(true).querySelector(".prow"); const pc=row.querySelector(".pc"),pa=row.querySelector(".pa"),pq=row.querySelector(".pq");
   pc.addEventListener("input",()=>{ if(pc.value!=="")pa.value=Math.round(parseNum(pc.value)/0.8); });
   row.querySelector(".del").addEventListener("click",()=>row.remove());
-  if(v){ row.querySelector(".pn").value=v.name||""; pc.value=v.cost||""; pa.value=v.excl||""; if(v.qty!=null&&v.qty!=="")pq.value=v.qty; } $("partsList").appendChild(row); }
+  if(v){ row.querySelector(".pn").value=v.name||""; pc.value=v.cost??""; pa.value=v.excl??""; if(v.qty!=null&&v.qty!=="")pq.value=v.qty; } $("partsList").appendChild(row); }
 function partRowsRaw(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>({name:r.querySelector(".pn").value,cost:r.querySelector(".pc").value,excl:r.querySelector(".pa").value,qty:r.querySelector(".pq").value})); }
-function getParts(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>{ const name=r.querySelector(".pn").value.trim(),cost=parseNum(r.querySelector(".pc").value); let excl=parseNum(r.querySelector(".pa").value); if(!excl&&cost)excl=Math.round(cost/0.8); const q=Math.max(0,parseNum(r.querySelector(".pq").value))||1; const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {name:dispName,amt:excl*q}; }).filter(p=>p.name||p.amt); }
+function getParts(){ return [...document.querySelectorAll("#partsList .prow")].map(r=>{ const name=r.querySelector(".pn").value.trim(),cost=Math.max(0,parseNum(r.querySelector(".pc").value)),amount=r.querySelector(".pa").value,quantity=r.querySelector(".pq").value; const excl=amount.trim()===""?Math.round(cost/0.8):Math.max(0,parseNum(amount)); const q=quantity.trim()===""?1:Math.max(0,parseNum(quantity)); const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {name:dispName,amt:excl*q}; }).filter(p=>p.name||p.amt); }
 function addCustomRow(v){ const row=$("customRow").content.cloneNode(true).querySelector(".crow"); row.querySelector(".del").addEventListener("click",()=>row.remove());
-  if(v){ row.querySelector(".cn").value=v.name||""; row.querySelector(".ca").value=v.amt||""; const cq=row.querySelector(".cq"); if(v.qty!=null&&v.qty!=="")cq.value=v.qty; } $("customList").appendChild(row); }
+  if(v){ row.querySelector(".cn").value=v.name||""; row.querySelector(".ca").value=v.amt??""; const cq=row.querySelector(".cq"); if(v.qty!=null&&v.qty!=="")cq.value=v.qty; } $("customList").appendChild(row); }
 function customRowsRaw(){ return [...document.querySelectorAll("#customList .crow")].map(r=>({name:r.querySelector(".cn").value,amt:r.querySelector(".ca").value,qty:r.querySelector(".cq").value})); }
-function getCustom(){ return [...document.querySelectorAll("#customList .crow")].map(r=>{ const name=r.querySelector(".cn").value.trim(); const amt=parseNum(r.querySelector(".ca").value); const q=Math.max(0,parseNum(r.querySelector(".cq").value))||1; const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {name:dispName,amt:amt*q}; }).filter(c=>c.name); }
+function getCustom(){ return [...document.querySelectorAll("#customList .crow")].map(r=>{ const name=r.querySelector(".cn").value.trim(); const amt=Math.max(0,parseNum(r.querySelector(".ca").value)),quantity=r.querySelector(".cq").value; const q=quantity.trim()===""?1:Math.max(0,parseNum(quantity)); const dispName=(q!==1&&name)?`${name} ×${q}`:name; return {name:dispName,amt:amt*q}; }).filter(c=>c.name); }
 
 function syncWE(){ document.querySelectorAll(".we-toggle").forEach(cb=>{ const w=$(cb.dataset.for); if(w)w.style.display=cb.checked?"block":"none"; }); recomputeWorkFee(); }
 function syncBase(){ $("b1card").classList.toggle("off",!$("b1_use").checked); $("b2card").classList.toggle("off",!$("b2_use").checked); $("b3card").classList.toggle("off",!$("b3_use").checked); }
@@ -918,11 +922,16 @@ async function autoCalc(p){ const st=$(p+"_status"),key=$("apiKey").value.trim()
   if(!origin){st.textContent="出発地の住所を入力してください。";st.className="status err";return;}
   if(!dest){st.textContent="作業場所の住所を入力してください。";st.className="status err";return;}
   if(!key){st.textContent="APIキーを入力してください（または下のリンクで手入力）。";st.className="status err";return;}
+  const generation=_routeGeneration,kocon=$("mKocon").value,routeFields=["km","h","toll"].map(name=>$(p+"_"+name).value),request={};_routeRequests.set(p,request);
+  const ownsRequest=()=>_routeRequests.get(p)===request,currentRequest=()=>ownsRequest()&&generation===_routeGeneration;
   st.textContent="取得中…";st.className="status";$(p+"_auto").disabled=true;
-  try{ const r=await googleRoute(origin,dest,key); $(p+"_km").value=r.km.toFixed(1);$(p+"_h").value=r.h.toFixed(1);$(p+"_toll").value=Math.round(r.toll);
+  try{ const r=await googleRoute(origin,dest,key);
+    if(!currentRequest())return;
+    if(dest!==$("address").value.trim()||origin!==originAddr(p)||kocon!==$("mKocon").value||routeFields.some((value,index)=>value!==$(p+"_"+["km","h","toll"][index]).value)){st.textContent="入力内容が変わったため、取得結果は反映していません。";st.className="status";return;}
+    $(p+"_km").value=r.km.toFixed(1);$(p+"_h").value=r.h.toFixed(1);$(p+"_toll").value=Math.round(r.toll);
     st.innerHTML=`片道約${r.km.toFixed(1)}km／約${r.h.toFixed(1)}h／高速${r.hasToll?yen(r.toll):"なし"}（片道）。`;st.className="status ok";
     scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty();
-  }catch(e){ st.innerHTML="自動取得に失敗（"+esc(e.message)+"）。下のリンクで手入力を。";st.className="status err"; } finally{$(p+"_auto").disabled=false;} }
+  }catch(e){if(currentRequest()){st.innerHTML="自動取得に失敗（"+esc(e.message)+"）。下のリンクで手入力を。";st.className="status err";}} finally{if(ownsRequest()){_routeRequests.delete(p);$(p+"_auto").disabled=false;}} }
 function openMap(p,kind){ const o=originAddr(p),d=$("address").value.trim(); if(!o){alert("出発地の住所を入力してください。");return;} if(!d){alert("作業場所の住所を入力してください。");return;}
   const u=kind==="yahoo"?`https://map.yahoo.co.jp/route/car?from=${encodeURIComponent(o)}&to=${encodeURIComponent(d)}`:`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&travelmode=driving`; window.open(u,"_blank"); }
 
@@ -1036,7 +1045,29 @@ function validateReportState(state){ if(!state||typeof state!=="object"||Array.i
   const workStringKeys=["id","date","content","start","end","worker"];
   if(state.work.some(row=>workStringKeys.some(key=>key in row&&typeof row[key]!=="string")||("holiday" in row&&typeof row.holiday!=="boolean")||("hours" in row&&!["string","number"].includes(typeof row.hours))||(Array.isArray(row.people)&&row.people.some(person=>("worker" in person&&typeof person.worker!=="string")||("hours" in person&&!["string","number"].includes(typeof person.hours))))))throw new Error("作業データ内の値形式が正しくありません。");
   if("directEdits" in state&&(!state.directEdits||typeof state.directEdits!=="object"||Array.isArray(state.directEdits)))throw new Error("直接編集データの形式が正しくありません。");
-  if(!isValidSignatureData(state.signature||""))throw new Error("サイン画像の形式または容量が正しくありません。");
+  if(!isValidSignatureData(state.signature??""))throw new Error("サイン画像の形式または容量が正しくありません。");
+
+  const isScalar=value=>value==null||typeof value==="string"||(typeof value==="number"&&Number.isFinite(value));
+  Object.entries(state.fields).forEach(([key,value])=>{
+    if(!isScalar(value)&&typeof value!=="boolean")throw new Error("入力項目の値形式が正しくありません。");
+    if(typeof initialFieldValues[key]==="boolean"&&value!=null&&typeof value!=="boolean")throw new Error("チェック項目の値形式が正しくありません。");
+  });
+  for(const key of ["parts","customs","lodges","wdays"]){
+    for(const row of state[key]||[]){
+      for(const name of ["id","name","memo","cost","excl","qty","amt","people","nights","hours","night"]){
+        if(name in row&&!isScalar(row[name]))throw new Error(key+" の値形式が正しくありません。");
+      }
+      if("holiday" in row&&typeof row.holiday!=="boolean")throw new Error(key+" の休日指定が正しくありません。");
+    }
+  }
+  for(const row of state.work){
+    for(const name of ["people","inactivePeople"]){
+      if(!(name in row))continue;
+      if(!Array.isArray(row[name])||row[name].some(person=>!person||typeof person!=="object"||Array.isArray(person)||("worker" in person&&typeof person.worker!=="string")||("hours" in person&&!isScalar(person.hours))))throw new Error("作業者データの値形式が正しくありません。");
+    }
+    if("hours" in row&&!isScalar(row.hours))throw new Error("作業時間の値形式が正しくありません。");
+  }
+  if(state.directEdits&&Object.values(state.directEdits).some(value=>!isScalar(value)))throw new Error("保存済み修正内容の値形式が正しくありません。");
   return state;
 }
 function validateImportedEstimate(state){ if(!state||typeof state!=="object"||Array.isArray(state))throw new Error("見積データの形式ではありません。");
@@ -1044,6 +1075,20 @@ function validateImportedEstimate(state){ if(!state||typeof state!=="object"||Ar
   if(!state.fields||typeof state.fields!=="object"||Array.isArray(state.fields))throw new Error("見積データの必須項目がありません。");
   for(const key of ["parts","customs","lodges","wdays"]){ if(key in state&&!Array.isArray(state[key]))throw new Error(key+" の形式が正しくありません。"); }
   for(const key of ["parts","customs","lodges","wdays"]){ if(Array.isArray(state[key])&&state[key].some(item=>!item||typeof item!=="object"||Array.isArray(item)))throw new Error(key+" の項目形式が正しくありません。"); }
+
+  const isScalar=value=>value==null||typeof value==="string"||(typeof value==="number"&&Number.isFinite(value));
+  Object.entries(state.fields).forEach(([key,value])=>{
+    if(!isScalar(value)&&typeof value!=="boolean")throw new Error("入力項目の値形式が正しくありません。");
+    if(typeof initialFieldValues[key]==="boolean"&&value!=null&&typeof value!=="boolean")throw new Error("チェック項目の値形式が正しくありません。");
+  });
+  for(const key of ["parts","customs","lodges","wdays"]){
+    for(const row of state[key]||[]){
+      for(const name of ["id","name","memo","cost","excl","qty","amt","people","nights","hours","night"]){
+        if(name in row&&!isScalar(row[name]))throw new Error(key+" の値形式が正しくありません。");
+      }
+      if("holiday" in row&&typeof row.holiday!=="boolean")throw new Error(key+" の休日指定が正しくありません。");
+    }
+  }
   if(!Array.isArray(state.wdays))state.wdays=[]; return state;
 }
 function normalizeWorkRows(rows){ return (Array.isArray(rows)?rows:[]).map(row=>({...row,id:row.id||newReportRowId(),people:Array.isArray(row.people)?row.people:(row.worker?[{worker:row.worker,hours:row.hours||""}]:[])})); }
@@ -1056,7 +1101,7 @@ function collectState(){ const s={documentType:"report",schemaVersion:2,_kkmtRev
 function fileBaseName(){ const kocon=(($("mKocon")&&$("mKocon").value)||"").trim();
   const company=($("billName").value.trim()||$("client").value.trim()||"作業報告書");
   return [...[kocon,company].filter(Boolean),"報告書"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
-async function saveState(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); const s=collectState(); const name=fileBaseName()+".json";
+async function saveState(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();await waitForReportSignature();const s=collectState(); const name=fileBaseName()+".json";
   const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});
   const file=new File([blob],name,{type:"application/json"});
   if(navigator.canShare && navigator.canShare({files:[file]})){
@@ -1065,29 +1110,31 @@ async function saveState(){ if(driveAutosaveController&&driveAutosaveController.
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove();
   setTimeout(()=>{ try{ window.open(url,"_blank"); }catch(e){} setTimeout(()=>URL.revokeObjectURL(url),60000); },800); }
-function applyState(raw){ if(!raw)return; const s=validateReportState(raw); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); const fields={...initialFieldValues,...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo;
+function applyState(raw){ if(!raw)return; const s=validateReportState(raw); invalidateRouteRequests(); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); const fields={...initialFieldValues,...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo;
   const workRows=normalizeWorkRows(s.work); const incomingWorkers=Array.isArray(s.workers)?s.workers:[]; const workWorkers=workRows.flatMap(w=>w.people.map(p=>p.worker).filter(Boolean));
   WORKERS=[...new Set([...DEFAULT_WORKERS,...WORKERS,...incomingWorkers,...workWorkers])]; saveWorkers();
-  ACTIVE = (Array.isArray(s.activeWorkers)&&s.activeWorkers.length) ? s.activeWorkers.filter(w=>WORKERS.includes(w)) : [...new Set(workWorkers)];
+  ACTIVE = [...new Set([...(Array.isArray(s.activeWorkers)?s.activeWorkers:[]),...workWorkers])].filter(w=>WORKERS.includes(w));
   renderWorkerPick(); _reportDirectEdits=migrateLegacyReportEdits(s); _reportGeneratedValues={};
-  Object.keys(fields).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
+  Object.keys(initialFieldValues).forEach(id=>{ const el=$(id); if(!el)return; if(el.type==="checkbox")el.checked=!!fields[id]; else el.value=fields[id]; });
   $("partsList").innerHTML=""; (s.parts&&s.parts.length?s.parts:[null]).forEach(p=>addPartRow(p));
   $("customList").innerHTML=""; (s.customs&&s.customs.length?s.customs:[null]).forEach(c=>addCustomRow(c));
   $("lodgeList").innerHTML=""; const _lr=lodgesFromState(s); (_lr.length?_lr:[null]).forEach(l=>addLodgeRow(l)); refreshLodge();
   $("workRows").innerHTML=""; (workRows.length?workRows:[null]).forEach(w=>addWorkRow(w));
-  sigDataURL=isValidSignatureData(s.signature||"")?(s.signature||""):""; if(mainPad)mainPad.draw(sigDataURL); updateSigState();
+  setReportSignature(isValidSignatureData(s.signature||"")?(s.signature||""):""); if(mainPad)mainPad.draw(sigDataURL);
   syncSameState(false); syncWE(); syncBase(); refreshDirect(); renderReport(); }
 
 /* ===== 自動保存（下書き）：APIキー(kkmt_gkey)・作業者リスト(kkmt_workers)は別枠なので消えない ===== */
 const DRAFT_KEY="kkmt_report_draft";
 let _autosaveT=null;
+let _skipDraftOnLeave=false;
 function writeLocalDraftNow(){ clearTimeout(_autosaveT); _autosaveT=null; try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } }
+function flushDraftOnLeave(){ if(!_skipDraftOnLeave)writeLocalDraftNow(); }
 function cancelLocalAutosave(){ clearTimeout(_autosaveT); _autosaveT=null; }
-function cancelPendingFormUpdates(){ cancelLocalAutosave(); clearTimeout(_livePreviewT); }
+function cancelPendingFormUpdates(){ invalidateRouteRequests(); cancelLocalAutosave(); clearTimeout(_livePreviewT); }
 function autosave(){ cancelLocalAutosave(); _autosaveT=setTimeout(writeLocalDraftNow,400); }
 function autosaveFromEvent(event){ const target=event&&event.target; if(target&&target.type==="file")return; autosave(); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
-function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
+function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; _skipDraftOnLeave=true; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
 async function searchReportFromDrive(){
   const byKocon=$("driveSearchModeKocon").checked;
@@ -1136,7 +1183,7 @@ async function importEstimateFromDrive(){
     await driveAutosaveController.loadDocument({
       load:async()=>{const data=await KKMTDrive.loadJson({kocon,docType:"estimate"});if(!data)throw new Error(`高コン「${kocon}」の見積書が見つかりません。`);return validateImportedEstimate(data);},
       apply:data=>{if(!importEstimate(data,true))throw new Error("見積書を取り込めませんでした。");$("mKocon").value=kocon;},
-      message:"見積書を報告書へ取り込みました。§8の作業者を確認してください。共通Driveは上書きしていません。"
+      message:"見積書を報告書へ取り込みました。§8の作業者を確認してください。作業費は報告書の料金基準（1日8時間超）で再計算します。共通Driveは上書きしていません。"
     });
   }catch(error){
     console.error("Estimate import failed",error);
@@ -1152,37 +1199,49 @@ function importEstimate(raw,silent){ let s; try{s=validateImportedEstimate(raw);
   else { const mk=(people,days,h,night,holiday)=>{ days=Math.max(0,parseNum(days)||0); for(let d=0;d<days;d++)pushDay(people,h,night,holiday); };
     mk(f.wkdPeople,f.daysWd,f.hoursWd,f.nightWd,false); mk(f.wkePeople,f.daysWe,f.hoursWe,f.nightWe,true); }
   applyState({ documentType:"report",schemaVersion:2,fields:f,parts:s.parts||[],customs:s.customs||[],lodges:s.lodges||lodgesFromState(s),work,workers:WORKERS,activeWorkers:ACTIVE });
-  if(!silent)alert("見積データを取り込みました。§8の作業者名は空欄なので、必要に応じて選んでください。");
+  if(!silent)alert("見積データを取り込みました。§8の作業者名は未設定なので、必要に応じて選んでください。作業費は報告書の料金基準（1日8時間超）で再計算します。");
   return true; }
 
 /* ===== 報告書 追加ロジック ===== */
-let WORKERS=[]; let sigDataURL="";
+let WORKERS=[]; let sigDataURL="",_signatureGeneration=0,_signaturePending=false,_signatureReady=Promise.resolve(true);
+async function waitForReportSignature(){let ready,result;do{ready=_signatureReady;result=await ready;}while(ready!==_signatureReady);return result;}
+function setReportSignature(signature,verified=false){const generation=++_signatureGeneration;sigDataURL=signature;_signaturePending=!!signature&&!verified;updateSigState();
+  if(!_signaturePending){_signatureReady=Promise.resolve(true);return;}
+  _signatureReady=new Promise(resolve=>{const image=new Image();image.onload=()=>{if(generation!==_signatureGeneration){resolve(false);return;}_signaturePending=false;updateSigState();resolve(true);};image.onerror=()=>{if(generation!==_signatureGeneration){resolve(false);return;}_signaturePending=false;sigDataURL="";updateSigState();$("sigState").textContent="⚠ サイン画像を表示できません。サインを記入し直してください。";if(mainPad)mainPad.clear();renderReport();autosave();if(driveAutosaveController)driveAutosaveController.markDirty();resolve(false);};image.src=signature;});
+}
 const DEFAULT_WORKERS=["瑞澤","武藤","新井","近藤そ","近藤た","山口","グェン","金子あ","平野"];
-function loadWorkers(){ try{ const w=localStorage.getItem("kkmt_workers"); if(w)WORKERS=JSON.parse(w)||[]; }catch{}
+function loadWorkers(){ try{ const w=localStorage.getItem("kkmt_workers"); if(w){const saved=JSON.parse(w);if(Array.isArray(saved))WORKERS=[...new Set(saved.filter(name=>typeof name==="string"&&name.trim()))];} }catch{}
   let changed=false; DEFAULT_WORKERS.forEach(n=>{ if(!WORKERS.includes(n)){ WORKERS.push(n); changed=true; } }); if(changed)saveWorkers(); }
 function saveWorkers(){ try{ localStorage.setItem("kkmt_workers",JSON.stringify(WORKERS)); }catch{} }
 let ACTIVE=[];
 function renderWorkerPick(){ const box=$("workerPick"); if(!box)return; ACTIVE=ACTIVE.filter(w=>WORKERS.includes(w));
   box.innerHTML=WORKERS.map(w=>`<label class="wchip"><input type="checkbox" class="wpk" value="${esc(w)}" ${ACTIVE.includes(w)?"checked":""}>${esc(w)}</label>`).join("");
   box.querySelectorAll(".wpk").forEach(cb=>cb.addEventListener("change",setActiveFromPick)); }
-function setActiveFromPick(){ const checked=[...document.querySelectorAll("#workerPick .wpk:checked")].map(c=>c.value); ACTIVE=WORKERS.filter(w=>checked.includes(w)); document.querySelectorAll("#workRows .wrow").forEach(renderRowHours); }
-function renderRowHours(row){ const box=row.querySelector(".whours"); if(!box)return; const prev={}; box.querySelectorAll(".ph").forEach(inp=>{ prev[inp.dataset.worker]=inp.value; });
-  if(!ACTIVE.length){ box.innerHTML='<span class="foot" style="color:#999">上で作業者を選択してください</span>'; return; }
-  box.innerHTML=ACTIVE.map(w=>`<label class="phcell">${esc(w)}<input class="ph" type="number" min="0" step="0.5" data-worker="${esc(w)}" placeholder="h"></label>`).join("");
-  box.querySelectorAll(".ph").forEach(inp=>{ if(prev[inp.dataset.worker]!=null)inp.value=prev[inp.dataset.worker]; }); }
-function addWorker(name){ name=(name||"").trim(); if(!name||WORKERS.includes(name))return; WORKERS.push(name); saveWorkers(); if(!ACTIVE.includes(name))ACTIVE.push(name); renderWorkerPick(); document.querySelectorAll("#workRows .wrow").forEach(renderRowHours); }
+function setActiveFromPick(){ const checked=[...document.querySelectorAll("#workerPick .wpk:checked")].map(c=>c.value),next=WORKERS.filter(w=>checked.includes(w)),added=next.filter(w=>!ACTIVE.includes(w)); ACTIVE=next; document.querySelectorAll("#workRows .wrow").forEach(row=>renderRowHours(row,added)); }
+function renderRowHours(row,added=[]){ const box=row.querySelector(".whours"); if(!box)return; const hours=row._hoursByWorker||(row._hoursByWorker=new Map());
+  const inputs=[...box.querySelectorAll(".ph")]; inputs.filter(inp=>inp.dataset.worker).forEach(inp=>hours.set(inp.dataset.worker,inp.value));
+  if(inputs.some(inp=>inp.dataset.unassigned!==undefined))row._pendingPeople=inputs.filter(inp=>inp.dataset.unassigned!==undefined).map(inp=>({worker:"",hours:inp.value}));
+  const pending=row._pendingPeople||(row._pendingPeople=[]);
+  added.forEach(worker=>{if((!hours.has(worker)||String(hours.get(worker)).trim()==="")&&pending.length)hours.set(worker,pending.shift().hours??"");});
+  if(!ACTIVE.length&&!pending.length){ box.innerHTML='<span class="foot" style="color:#999">上で作業者を選択してください</span>'; return; }
+  box.innerHTML=ACTIVE.map(w=>`<label class="phcell">${esc(w)}<input class="ph" type="number" min="0" step="0.5" data-worker="${esc(w)}" placeholder="h"></label>`).join("")+pending.map((person,index)=>`<label class="phcell">作業者未設定${index+1}<input class="ph" type="number" min="0" step="0.5" data-worker="" data-unassigned="${index}" placeholder="h"></label>`).join("");
+  box.querySelectorAll(".ph").forEach(inp=>{const value=inp.dataset.worker?hours.get(inp.dataset.worker):(pending[+inp.dataset.unassigned]||{}).hours;if(value!=null)inp.value=value;}); }
+function addWorker(name){ name=(name||"").trim(); if(!name||WORKERS.includes(name))return; WORKERS.push(name); saveWorkers(); if(!ACTIVE.includes(name))ACTIVE.push(name); renderWorkerPick(); document.querySelectorAll("#workRows .wrow").forEach(row=>renderRowHours(row,[name])); }
 function hoursFromTimes(s,e){ if(!s||!e)return null; const a=s.split(":").map(Number),b=e.split(":").map(Number); let d=(b[0]*60+b[1])-(a[0]*60+a[1]); if(d<0)d+=1440; return Math.round(d/60*10)/10; }
 function addWorkRow(v){ const row=$("workRow").content.cloneNode(true).querySelector(".wrow"); row.dataset.workId=(v&&v.id)||newReportRowId(); const st=row.querySelector(".wStart"),en=row.querySelector(".wEnd");
   row.querySelector(".del").addEventListener("click",()=>row.remove());
   if(v){ row.querySelector(".wDate").value=v.date||""; row.querySelector(".wContent").value=v.content||""; st.value=v.start||""; en.value=v.end||""; row.querySelector(".wHol").checked=!!v.holiday; }
+  row._hoursByWorker=new Map([...(v&&v.inactivePeople||[]),...(v&&v.people||[])].filter(person=>person.worker).map(person=>[person.worker,person.hours??""]));
+  row._pendingPeople=(v&&v.people||[]).filter(person=>!person.worker).map(person=>({worker:"",hours:person.hours??""}));
   $("workRows").appendChild(row);
-  renderRowHours(row);
-  if(v&&v.people&&v.people.length){ const map={}; v.people.forEach(p=>{ if(p.worker)map[p.worker]=p.hours; }); row.querySelectorAll(".ph").forEach(inp=>{ if(map[inp.dataset.worker]!=null)inp.value=map[inp.dataset.worker]||""; }); } }
+  renderRowHours(row); }
 function getWorkRows(){ return [...document.querySelectorAll("#workRows .wrow")].map(r=>({
   id:r.dataset.workId||newReportRowId(),date:r.querySelector(".wDate").value, content:r.querySelector(".wContent").value,
   start:r.querySelector(".wStart").value, end:r.querySelector(".wEnd").value, holiday:r.querySelector(".wHol").checked,
-  people:[...r.querySelectorAll(".ph")].map(p=>({worker:p.dataset.worker,hours:p.value})).filter(p=>p.worker)
+  people:[...r.querySelectorAll(".ph")].map(p=>({worker:p.dataset.worker||"",hours:p.value})),
+  inactivePeople:[...(r._hoursByWorker||new Map())].filter(([worker,hours])=>!ACTIVE.includes(worker)&&String(hours).trim()!=="").map(([worker,hours])=>({worker,hours}))
 })); }
+function getPrintableWorkRows(){return getWorkRows().map(row=>{let unassigned=0;return {...row,people:row.people.map(person=>({...person,worker:person.worker||("作業者未設定"+(++unassigned)),hours:Math.max(0,parseNum(person.hours))})).filter(person=>person.hours>0)};});}
 
 const COMPANY_HOLIDAYS=new Set(["2025-08-01","2025-08-12","2025-08-13","2025-08-14","2025-08-15","2025-09-02","2025-12-29","2025-12-30","2025-12-31","2026-01-02","2026-01-03"]);
 function nthMonday(year,month,n){ const first=new Date(year,month-1,1),offset=(8-first.getDay())%7; return 1+offset+(n-1)*7; }
@@ -1202,7 +1261,7 @@ function isNationalHoliday(date){ if(baseNationalHoliday(date))return true;
 }
 function isWorkWE(dstr){ if(!dstr)return false; const p=String(dstr).split("-"); if(p.length<3)return false; const d=new Date(+p[0],+p[1]-1,+p[2]); const g=d.getDay(); return g===0||g===6||COMPANY_HOLIDAYS.has(dstr)||isNationalHoliday(d); }
 function dayWorkFee(h){ if(h<=0)return 0; if(h<=3)return 45000; if(h<=8)return 45000+(h-3)*9000; return 90000+(h-8)*12150; }
-function workFeeFromRows(){ let t=0; getWorkRows().forEach(r=>{ const we=isWorkWE(r.date)||r.holiday; (r.people||[]).forEach(p=>{ const h=parseNum(p.hours); if(h>0){ let f=dayWorkFee(h); if(we)f*=1.5; t+=f; } }); }); return Math.round(t); }
+function workFeeFromRows(){ const days=new Map(); getWorkRows().forEach((row,rowIndex)=>{const holiday=isWorkWE(row.date)||row.holiday;(row.people||[]).forEach((person,personIndex)=>{const hours=Math.max(0,parseNum(person.hours));if(!hours)return;const key=JSON.stringify([row.date||("row:"+rowIndex),person.worker||("unassigned:"+rowIndex+":"+personIndex)]),day=days.get(key)||{hours:0,holiday:false};day.hours+=hours;day.holiday=day.holiday||holiday;days.set(key,day);});});return Math.round([...days.values()].reduce((sum,day)=>sum+dayWorkFee(day.hours)*(day.holiday?P.WEEKEND:1),0)); }
 function computeCosts(){
   const bases=[baseData("b1"),baseData("b2"),baseData("b3")].filter(b=>b.use); const both=bases.length>1;
   const workFee=workFeeFromRows();
@@ -1232,7 +1291,7 @@ function computeCosts(){
 }
 function detailHTML(arr){ return (arr&&arr.length?arr:[["",0]]).map(([t,v])=>`<div class="detail-line"><span>（ ${esc(t)} ）</span><span>合計 ${num(v)}</span></div>`).join(""); }
 function renderReport(){
-  const C=computeCosts(); const W=getWorkRows();
+  const C=computeCosts(); const W=getPrintableWorkRows();
   let totH=0; W.forEach(w=>(w.people||[]).forEach(p=>totH+=parseNum(p.hours)));
   const rows=W.slice(); while(rows.length<7) rows.push({});
   const cb=on=>on?"☑":"☐"; const sig=isValidSignatureData(sigDataURL)?(sigDataURL?`<img src="${esc(sigDataURL)}">`:""):""; const addr=esc($("address").value.trim());
@@ -1247,12 +1306,12 @@ function renderReport(){
   let body="";
   for(let i=0;i<7;i++){ const w=rows[i]||{}; const ppl=w.people||[];
     const range=(w.start||w.end)?esc(w.start||"")+"〜"+esc(w.end||""):"〜";
-    const hrsFor=name=>{ const p=ppl.find(x=>x.worker===name); return (p&&p.hours)?num(parseNum(p.hours)):""; };
+    const hrsFor=name=>{ const p=ppl.find(x=>x.worker===name); return (p&&p.hours)?hoursText(p.hours):""; };
     const wh=[0,1,2,3].map(k=>`<td colspan="3" class="ctr" data-report-field>${workers[k]?hrsFor(workers[k]):""}</td>`).join("");
     const rowH=ppl.reduce((s,p)=>s+parseNum(p.hours),0);
     const lab=costLab[i],val=costVal[i];
     const cc= lab?`<td class="lbl" colspan="4">${lab}</td><td class="num rc" colspan="8" data-report-field>${z(val)}</td>`:`<td colspan="4"></td><td colspan="8"></td>`;
-    body+=`<tr class="wb"><td class="ctr">${dow(w.date,w.holiday)}</td><td colspan="3" class="ctr" data-report-field>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" data-report-field>${esc(w.content||"")}</td><td colspan="7" class="ctr" data-report-field>${range}</td>${wh}<td colspan="3" class="ctr" data-report-field>${rowH>0?num(rowH):""}</td>${cc}</tr>`;
+    body+=`<tr class="wb"><td class="ctr">${dow(w.date,w.holiday)}</td><td colspan="3" class="ctr" data-report-field>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" data-report-field>${esc(w.content||"")}</td><td colspan="7" class="ctr" data-report-field>${range}</td>${wh}<td colspan="3" class="ctr" data-report-field>${rowH>0?hoursText(rowH):""}</td>${cc}</tr>`;
   }
   $("sheet").className="sheet rp"; $("sheet").dataset.pageKey="main"; $("sheet").dataset.workIds=rows.map(row=>row.id||"").join(","); $("sheet").dataset.workerKey=workers.filter(Boolean).join(",");
   $("sheet").innerHTML=`
@@ -1281,7 +1340,7 @@ function renderReport(){
         <tr><td colspan="11"></td><th colspan="7">作業時間</th><th colspan="15">作業者・時間</th><th colspan="4">バーコード</th><td colspan="8"></td></tr>
         <tr><th colspan="4">日付</th><th colspan="7">内容</th><th colspan="7">時間帯</th><th colspan="3">${esc(workers[0])}</th><th colspan="3">${esc(workers[1])}</th><th colspan="3">${esc(workers[2])}</th><th colspan="3">${esc(workers[3])}</th><th colspan="3">合計</th><td class="lbl" colspan="4">作業費</td><td class="num rc" colspan="8" data-report-field>${z(C.workFee)}</td></tr>
         ${body}
-        <tr><td colspan="27"></td><td class="lbl" colspan="3">合計</td><td class="num" colspan="3">${totH>0?num(totH):""}</td><td class="lbl" colspan="4">合計</td><td class="num" colspan="8" id="rpTotal"><b>${C.reportTotal>0?num(C.reportTotal):""}</b></td></tr>
+        <tr><td colspan="27"></td><td class="lbl" colspan="3">合計</td><td class="num" colspan="3">${totH>0?hoursText(totH):""}</td><td class="lbl" colspan="4">合計</td><td class="num" colspan="8" id="rpTotal"><b>${C.reportTotal>0?num(C.reportTotal):""}</b></td></tr>
         <tr class="dl2"><td class="lbll vtop" colspan="9">不具合内容：</td><td colspan="36" class="vtop" data-report-field>${esc($("trouble").value).replace(/\n/g,"<br>")}</td></tr>
         <tr class="dl2"><td class="lbll vtop" colspan="9">原因：</td><td colspan="36" class="vtop" data-report-field>${esc($("cause").value).replace(/\n/g,"<br>")}</td></tr>
         <tr class="dl2"><td class="lbll vtop" colspan="9">処置：</td><td colspan="36" class="vtop" data-report-field>${$("custSupply").checked?"部品お客様支給"+($("action").value?"<br>":""):""}${esc($("action").value).replace(/\n/g,"<br>")}</td></tr>
@@ -1301,7 +1360,7 @@ function flushReportPreview(){ clearTimeout(_livePreviewT); renderReport(); }
 
 /* 8日目以降・5人目以降を「作業表のみ」の続きページに送る（費用・合計は1枚目のみ） */
 function renderOverflow(){ const ex=$("sheetExtra"); if(!ex)return; ex.innerHTML="";
-  const W=getWorkRows(); const workers=[...new Set(W.flatMap(w=>(w.people||[]).map(p=>p.worker)).filter(Boolean))];
+  const W=getPrintableWorkRows(); const workers=[...new Set(W.flatMap(w=>(w.people||[]).map(p=>p.worker)).filter(Boolean))];
   const dayChunks=[]; for(let i=0;i<W.length;i+=7)dayChunks.push(W.slice(i,i+7)); if(!dayChunks.length)dayChunks.push([]);
   const wkChunks=[]; for(let i=0;i<Math.max(workers.length,4);i+=4)wkChunks.push(workers.slice(i,i+4)); if(!wkChunks.length)wkChunks.push([]);
   let html="";
@@ -1318,12 +1377,12 @@ function workTableSheet(days, wk){
   let body="";
   for(let i=0;i<7;i++){ const w=rows[i]||{}; const ppl=w.people||[];
     const range=(w.start||w.end)?esc(w.start||"")+"〜"+esc(w.end||""):"〜";
-    const hrsFor=name=>{ const p=ppl.find(x=>x.worker===name); return (p&&p.hours)?num(parseNum(p.hours)):""; };
+    const hrsFor=name=>{ const p=ppl.find(x=>x.worker===name); return (p&&p.hours)?hoursText(p.hours):""; };
     const wh=[0,1,2,3].map(k=>`<td colspan="3" class="ctr" data-report-field>${w4[k]?hrsFor(w4[k]):""}</td>`).join("");
     const rowH=ppl.reduce((s,p)=>s+parseNum(p.hours),0);
     const lab=costLab[i];
     const cc= lab?`<td class="lbl" colspan="4">${lab}</td><td class="num rc" colspan="8" data-report-field></td>`:`<td colspan="4"></td><td colspan="8"></td>`;
-    body+=`<tr class="wb"><td class="ctr">${wkdow(w.date,w.holiday)}</td><td colspan="3" class="ctr" data-report-field>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" data-report-field>${esc(w.content||"")}</td><td colspan="7" class="ctr" data-report-field>${range}</td>${wh}<td colspan="3" class="ctr" data-report-field>${rowH>0?num(rowH):""}</td>${cc}</tr>`;
+    body+=`<tr class="wb"><td class="ctr">${wkdow(w.date,w.holiday)}</td><td colspan="3" class="ctr" data-report-field>${esc(w.date?fmtDate(w.date):"")}</td><td colspan="7" data-report-field>${esc(w.content||"")}</td><td colspan="7" class="ctr" data-report-field>${range}</td>${wh}<td colspan="3" class="ctr" data-report-field>${rowH>0?hoursText(rowH):""}</td>${cc}</tr>`;
   }
   return `<div class="sheet rp cont" data-page-key="${esc(pageKey)}" data-work-ids="${esc(sourceDays.map(row=>row.id||"").join(","))}" data-worker-key="${esc(sourceWorkers.join(","))}">
   <div class="titlecell">作 業 報 告 書</div>
@@ -1373,16 +1432,18 @@ function fitCells(root){ if(!root)return;
 function fitAllCells(){ fitCells($("sheet")); const ex=$("sheetExtra"); if(ex)ex.querySelectorAll(".sheet").forEach(s=>fitCells(s)); }
 function recalcReport(){ let t=0; document.querySelectorAll("#sheet .rc").forEach(c=>t+=parseNum(c.textContent)); const el=$("rpTotal"); if(el)el.innerHTML="<b>"+num(t)+"</b>"; }
 
-function makePad(cv,onEnd){ const ctx=cv.getContext("2d");
-  function resize(){ const w=cv.clientWidth||320,h=cv.getAttribute("data-h")?+cv.getAttribute("data-h"):150; cv.width=w; cv.height=h; ctx.lineWidth=2.4; ctx.lineCap="round"; ctx.strokeStyle="#102040"; }
-  let drawing=false,lx=0,ly=0; const pos=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*(cv.width/r.width),(e.clientY-r.top)*(cv.height/r.height)];};
-  cv.addEventListener("pointerdown",e=>{drawing=true;[lx,ly]=pos(e);cv.setPointerCapture(e.pointerId);});
+function makePad(cv,onEnd,onImageError){ const ctx=cv.getContext("2d");let imageGeneration=0,drawing=false,lx=0,ly=0,ready=Promise.resolve(true),resolveLoading=null;
+  const cancelLoading=()=>{imageGeneration++;if(resolveLoading)resolveLoading(false);resolveLoading=null;ready=Promise.resolve(true);};
+  function resize(){cancelLoading();drawing=false;const w=cv.clientWidth||320,h=cv.getAttribute("data-h")?+cv.getAttribute("data-h"):150;cv.width=w;cv.height=h;ctx.lineWidth=2.4;ctx.lineCap="round";ctx.strokeStyle="#102040";}
+  const clear=()=>{cancelLoading();drawing=false;ctx.clearRect(0,0,cv.width,cv.height);};
+  const pos=e=>{const r=cv.getBoundingClientRect();return[(e.clientX-r.left)*(cv.width/r.width),(e.clientY-r.top)*(cv.height/r.height)];};
+  cv.addEventListener("pointerdown",e=>{cancelLoading();drawing=true;[lx,ly]=pos(e);cv.setPointerCapture(e.pointerId);});
   cv.addEventListener("pointermove",e=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(p[0],p[1]);ctx.stroke();lx=p[0];ly=p[1];});
-  const end=()=>{if(drawing){drawing=false;if(onEnd)onEnd();}}; cv.addEventListener("pointerup",end); cv.addEventListener("pointerleave",end);
-  return { ctx, resize, clear:()=>ctx.clearRect(0,0,cv.width,cv.height), draw:(d)=>{ resize(); if(d){const i=new Image();i.onload=()=>ctx.drawImage(i,0,0,cv.width,cv.height);i.src=d;} } };
+  const end=()=>{if(drawing){drawing=false;if(onEnd)onEnd();}};["pointerup","pointerleave","pointercancel","lostpointercapture"].forEach(event=>cv.addEventListener(event,end));
+  return {ctx,resize,clear,whenReady:async()=>{let pending,result;do{pending=ready;result=await pending;}while(pending!==ready);return result&&!drawing;},draw:d=>{resize();if(d){ready=new Promise(resolve=>{resolveLoading=resolve;});const generation=imageGeneration,image=new Image(),fail=()=>{if(generation!==imageGeneration)return;imageGeneration++;drawing=false;ctx.clearRect(0,0,cv.width,cv.height);if(resolveLoading)resolveLoading(false);resolveLoading=null;ready=Promise.resolve(false);if(onImageError)onImageError();};image.onload=()=>{if(generation!==imageGeneration)return;try{ctx.drawImage(image,0,0,cv.width,cv.height);if(resolveLoading)resolveLoading(true);resolveLoading=null;}catch(_){fail();}};image.onerror=fail;image.src=d;}}};
 }
 let mainPad=null, ssPad=null, ssDraftSignature="";
-function updateSigState(){ const el=$("sigState"); if(el)el.textContent=sigDataURL?"✅ サイン取得済み（サイン画面で修正できます）":"— サイン未取得"; }
+function updateSigState(){ const el=$("sigState"); if(el)el.textContent=_signaturePending?"サイン画像を確認中…":sigDataURL?"✅ サイン取得済み（サイン画面で修正できます）":"— サイン未取得"; }
 function signatureJsonPayload(signature){ return {
   type:"kkmt-customer-signature",version:1,createdAt:new Date().toISOString(),
   client:($("billName").value||$("client").value||"").trim(),subject:$("subject").value.trim(),signature
@@ -1391,23 +1452,23 @@ function signatureFromJson(data){ const signature=data&&data.signature;
   if(!isValidSignatureData(signature)||!signature)throw new Error("サイン画像が入ったJSONではないか、容量が大きすぎます。");
   return signature;
 }
-async function exportSignatureJson(){ if(!ssDraftSignature){ alert("先にお客様のサインを記入してください。"); return; }
+async function exportSignatureJson(){if(ssPad&&!(await ssPad.whenReady()))return;if(!ssDraftSignature){ alert("先にお客様のサインを記入してください。"); return; }
   const payload=signatureJsonPayload(ssDraftSignature),name=fileBaseName()+"_お客様サイン.json";
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}),file=new File([blob],name,{type:"application/json"});
   if(navigator.canShare&&navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file],title:name}); return; }catch(err){ if(err&&err.name==="AbortError")return; } }
   const url=URL.createObjectURL(blob),a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function importSignatureJson(data){ ssDraftSignature=signatureFromJson(data); if(ssPad)ssPad.draw(ssDraftSignature); }
-function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{sigDataURL=cv.toDataURL("image/png"); updateSigState(); scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty();});
-    setTimeout(()=>mainPad.resize(),60); window.addEventListener("resize",()=>{ if(mainPad){mainPad.resize(); if(sigDataURL)mainPad.draw(sigDataURL);} }); }
-  const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear(); sigDataURL=""; updateSigState(); scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); });
+function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{setReportSignature(cv.toDataURL("image/png"),true);scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty();});
+    setTimeout(()=>{mainPad.resize();if(sigDataURL)mainPad.draw(sigDataURL);},60); window.addEventListener("resize",()=>{ if(mainPad){mainPad.resize(); if(sigDataURL)mainPad.draw(sigDataURL);} }); }
+  const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear();setReportSignature("",true);scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); });
   updateSigState(); }
 function openSignScreen(){
   $("ssClient").textContent=($("billName").value||$("client").value).trim(); $("ssSubject").textContent=$("subject").value.trim();
   $("ssTrouble").value=$("trouble").value; $("ssCause").value=$("cause").value; $("ssAction").value=$("action").value;
   $("ssComplete").classList.toggle("on",$("doneComplete").checked); $("ssIncomplete").classList.toggle("on",$("doneIncomplete").checked);
-  $("signScreen").classList.add("show"); const cv=$("ssSigPad"); cv.setAttribute("data-h","200"); ssDraftSignature=sigDataURL; if(!ssPad)ssPad=makePad(cv,()=>{ssDraftSignature=cv.toDataURL("image/png");}); ssPad.draw(ssDraftSignature); }
-function closeSignScreen(save){ if(save){ sigDataURL=ssDraftSignature;
+  $("signScreen").classList.add("show"); const cv=$("ssSigPad"); cv.setAttribute("data-h","200"); ssDraftSignature=sigDataURL; if(!ssPad)ssPad=makePad(cv,()=>{ssDraftSignature=cv.toDataURL("image/png");},()=>{ssDraftSignature="";alert("サイン画像を表示できません。サインを記入し直すか、別のサインデータを読み込んでください。");}); ssPad.draw(ssDraftSignature); }
+async function closeSignScreen(save){ if(save){if(ssPad&&!(await ssPad.whenReady()))return;if(!$("signScreen").classList.contains("show"))return;setReportSignature(ssDraftSignature,true);
     $("trouble").value=$("ssTrouble").value; $("cause").value=$("ssCause").value; $("action").value=$("ssAction").value;
     $("doneComplete").checked=$("ssComplete").classList.contains("on"); $("doneIncomplete").checked=$("ssIncomplete").classList.contains("on");
     if(mainPad)mainPad.draw(sigDataURL); updateSigState(); renderReport(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); }
@@ -1447,6 +1508,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow());
   async function buildReportPdf(flush=true){
     if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();
+    await waitForReportSignature();
     if(flush)flushReportPreview();
     fitAllCells();
     if(!(window.html2canvas && window.jspdf)){ alert("PDF部品の読み込みに失敗しました。ページを開き直してください。"); return null; }
@@ -1473,6 +1535,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   }
   async function buildOutputPair(){
     if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();
+    await waitForReportSignature();
     const app=document.querySelector(".app"); const oldPointer=app.style.pointerEvents; const oldInert=app.inert;
     try{ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); flushReportPreview(); const snapshot=collectState(); app.style.pointerEvents="none"; app.inert=true; const pdf=await buildReportPdf(false); if(!pdf)return null; return {pdf,json:buildStateFile(snapshot,false)}; }
     finally{ app.inert=oldInert; app.style.pointerEvents=oldPointer; }
@@ -1505,7 +1568,7 @@ document.addEventListener("DOMContentLoaded",()=>{
     }catch(e){ console.error(e); alert("保存に失敗しました。もう一度お試しください。"); }
   }
   async function saveDataOnly(){
-    try{ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); const json=buildStateFile();
+    try{ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();await waitForReportSignature();const json=buildStateFile();
       if(!IS_PC && navigator.canShare && navigator.canShare({files:[json.file]})){
         try{ await navigator.share({files:[json.file],title:json.name}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
       }
@@ -1513,7 +1576,7 @@ document.addEventListener("DOMContentLoaded",()=>{
       downloadBlob(json.blob,json.name,false);
     }catch(e){ console.error(e); alert("データの保存に失敗しました。もう一度お試しください。"); }
   }
-  async function doPrint(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); flushReportPreview(); fitAllCells(); setTimeout(()=>window.print(),80); }
+  async function doPrint(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();await waitForReportSignature();flushReportPreview(); fitAllCells(); setTimeout(()=>window.print(),80); }
   $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth);
   $("pdfBtn").addEventListener("click",exportPDF); $("dataBtn").addEventListener("click",saveDataOnly);
   let IS_PC=false;
@@ -1556,6 +1619,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   const restoredDraft=restoreDraft();
   if($("sheet").querySelector(".empty"))renderReport();
   const liveForm=document.querySelector(".form");
+  liveForm.addEventListener("input",event=>{if(event.target&&["address","billAddr","b3_addr","mKocon"].includes(event.target.id))invalidateRouteRequests();});
+  $("sameAsSite").addEventListener("change",invalidateRouteRequests);
   liveForm.addEventListener("input",scheduleLivePreview);
   liveForm.addEventListener("change",scheduleLivePreview);
   const liveMutationIds=new Set(["addLodge","addCustom","addPart","addWorker","addWork"]);
@@ -1582,6 +1647,8 @@ document.addEventListener("DOMContentLoaded",()=>{
   _app.addEventListener("input",autosaveFromEvent); _app.addEventListener("change",autosaveFromEvent);
   _app.addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&(liveMutationIds.has(b.id)||b.matches(".del,.pdel,.addPerson,#ssOk,#sigClear")))setTimeout(autosave,0); });
   $("resetAllBtn").addEventListener("click",resetAll);
+  window.addEventListener("pagehide",flushDraftOnLeave);
+  document.addEventListener("visibilitychange",()=>{ if(document.visibilityState==="hidden")flushDraftOnLeave(); });
 });
 </script>
 </body>

@@ -22,13 +22,19 @@ class File {
   setContent(content) { this.content = content; this.updated = new Date(++sequence * 1000); return this; }
   getLastUpdated() { return this.updated; }
   getBlob() { return { getDataAsString: () => this.content }; }
+  moveTo(folder) {
+    if (this.folder) this.folder.files = this.folder.files.filter(file => file !== this);
+    this.folder = folder;
+    folder.files.push(this);
+    return this;
+  }
 }
 class Folder {
   constructor(name) { this.name = name; this.folders = []; this.files = []; }
   getFoldersByName(name) { return new Iterator(this.folders.filter(folder => folder.name === name)); }
   createFolder(name) { const folder = new Folder(name); this.folders.push(folder); return folder; }
   getFiles() { return new Iterator(this.files); }
-  createFile(name, content) { const file = new File(name, content); this.files.push(file); return file; }
+  createFile(name, content) { const file = new File(name, content); file.folder = this; this.files.push(file); return file; }
 }
 const root = new Folder("root");
 const output = value => ({
@@ -202,6 +208,47 @@ result = request({
 assert.equal(result.ok, true);
 assert.equal(reportFolder.files.length, 2);
 assert.equal(request({ action: "load", pin, docType: "report", kocon: "200" }).result.version, 4);
+
+// Old estimates remain readable and retain their revision during migration.
+// The first valid update moves the same file to the current folder.
+const legacyFolder = rootFolder.createFolder("見積書");
+const legacyData = { documentType: "estimate", _kkmtDocumentType: "estimate", _kkmtRevision: 4,
+  fields: { estNo: "legacy-100", subject: "旧フォルダの見積もり" }, wdays: [], version: 10 };
+const legacyFile = legacyFolder.createFile("旧見積書.json", JSON.stringify(legacyData));
+assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "legacy-100" }).result.version, 10);
+assert.equal(request({ action: "load", pin, docType: "estimate", subject: legacyData.fields.subject }).result._kkmtRevision, 4);
+const staleLegacy = request({ action: "save", pin, docType: "estimate", kocon: "legacy-100", subject: legacyData.fields.subject,
+  expectedRevision: 0, data: { ...legacyData, _kkmtRevision: 0, version: 99 } });
+assert.equal(staleLegacy.ok, false);
+assert.match(staleLegacy.error, /CONFLICT/);
+assert.equal(estimateFolder.files.some(file => JSON.parse(file.content).fields.mKocon === "legacy-100"), false);
+const migratedLegacy = request({ action: "save", pin, docType: "estimate", kocon: "legacy-100", subject: legacyData.fields.subject,
+  expectedRevision: 4, data: { ...legacyData, fields: { mKocon: "legacy-100", subject: legacyData.fields.subject }, version: 11 } });
+assert.equal(migratedLegacy.ok, true);
+assert.equal(migratedLegacy.result.revision, 5);
+assert.equal(migratedLegacy.result.id, legacyFile.id);
+assert.equal(JSON.parse(legacyFile.content).version, 11);
+assert.equal(legacyFolder.files.includes(legacyFile), false);
+assert.equal(estimateFolder.files.some(file => file.id === migratedLegacy.result.id), true);
+assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "legacy-100" }).result.version, 11);
+// An older duplicate in the legacy folder cannot hide the current document.
+legacyFolder.createFile("旧重複見積書.json", JSON.stringify({ ...legacyData, version: 12 }));
+assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "legacy-100" }).result.version, 11);
+const staleAfterMigration = request({ action: "save", pin, docType: "estimate", kocon: "legacy-100", subject: legacyData.fields.subject,
+  expectedRevision: 4, data: { ...legacyData, version: 99 } });
+assert.equal(staleAfterMigration.ok, false);
+assert.match(staleAfterMigration.error, /CONFLICT/);
+
+// Subject-only legacy estimates use the same compatibility and conflict rules.
+const legacySubject = "高コン未定・旧見積もり";
+legacyFolder.createFile("高コン未定.json", JSON.stringify({ fields: { subject: legacySubject }, wdays: [], _kkmtRevision: 2 }));
+assert.equal(request({ action: "load", pin, docType: "estimate", subject: legacySubject }).result._kkmtRevision, 2);
+const promotedLegacy = request({ action: "save", pin, docType: "estimate", kocon: "legacy-200", subject: legacySubject,
+  expectedRevision: 2, data: { fields: { mKocon: "legacy-200", subject: legacySubject }, wdays: [] } });
+assert.equal(promotedLegacy.ok, true);
+assert.equal(promotedLegacy.result.revision, 3);
+assert.equal(request({ action: "load", pin, docType: "estimate", kocon: "legacy-200" }).result._kkmtRevision, 3);
+assert.equal(request({ action: "load", pin, docType: "estimate", subject: legacySubject }).result._kkmtRevision, 3);
 const report200 = request({ action: "load", pin, docType: "report", kocon: "200" }).result;
 const malformedPeople = request({
   action: "save", pin, docType: "report", kocon: "200", subject: "クラッチ交換",
