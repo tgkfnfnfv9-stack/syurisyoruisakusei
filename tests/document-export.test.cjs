@@ -106,7 +106,7 @@ test("an unsupported mixed-file share exposes both individual downloads", async 
   const exporter = f.api.create({ isPC: () => false, capture() { return { name: "非対応端末", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
   await exporter.start("both");
   assert.equal(f.button("まとめて共有"), undefined);
-  assert.ok(f.button("PDFを共有"));
+  assert.ok(f.buttons().some(button => button.getAttribute("aria-label") === "PDFを共有"));
   assert.equal(f.document.querySelectorAll("a").length, 2);
   assert.match(f.text(), /両方を個別に保存/);
   f.cleanup();
