@@ -26,7 +26,7 @@ test("JSON-only output does not start PDF generation or await remote autosave", 
   f.global.driveAutosaveController = { whenIdle() { throw new Error("remote autosave must not block export"); } };
   let calls = 0;
   const state = { documentType: "estimate", fields: { subject: "保存時の件名", amount: "1234" } };
-  const exporter = f.api.create({ isPC: () => true, capture(kind) { calls++; assert.equal(kind, "json"); return { name: "見積テスト", state, pages: [], dispose() {} }; } });
+  const exporter = f.api.create({ capture(kind) { calls++; assert.equal(kind, "json"); return { name: "見積テスト", state, pages: [], dispose() {} }; } });
   await exporter.start("json");
   assert.equal(calls, 1); assert.equal(f.captures.length, 0);
   assert.ok(f.text().includes("JSON") || f.text().includes("データ"));
@@ -38,7 +38,7 @@ test("overlapping clicks cannot run a second capture while PDF is being prepared
   const wait = deferred();
   const f = fixture({ render: () => wait.promise });
   let calls = 0, disposed = 0;
-  const exporter = f.api.create({ isPC: () => true, capture() { calls++; return { name: "同時実行", state: { fields: {} }, pages: [new f.Element("section")], dispose() { disposed++; } }; } });
+  const exporter = f.api.create({ capture() { calls++; return { name: "同時実行", state: { fields: {} }, pages: [new f.Element("section")], dispose() { disposed++; } }; } });
   const first = exporter.start("both");
   await Promise.resolve(); await Promise.resolve();
   const second = exporter.start("both");
@@ -49,14 +49,14 @@ test("overlapping clicks cannot run a second capture while PDF is being prepared
   f.cleanup();
 });
 
-for (const pc of [true, false]) for (const kind of ["pdf", "json", "both"]) {
-  test(`${pc ? "PC" : "mobile"} ${kind}: retained files are individually downloadable and keep one snapshot`, async () => {
+for (const kind of ["pdf", "json", "both"]) {
+  test(`${kind}: retained files are individually downloadable and keep one snapshot`, async () => {
     const f = fixture();
     const input = { documentType: "report", schemaVersion: 2, fields: { billName: "保存時のお客様", mKocon: "123" }, work: [{ content: "初期作業" }], signature: "data:image/png;base64,AAAA" };
     const first = new f.Element("section"), second = new f.Element("section");
     first.textContent = "保存時のお客様"; second.textContent = "初期作業";
     let calls = 0;
-    const exporter = f.api.create({ isPC: () => pc, capture() { calls++; return { name: "123_保存時のお客様", state: input, ...(kind === "json" ? { pages: [], dispose() {} } : f.api.capturePages([first, second])) }; } });
+    const exporter = f.api.create({ capture() { calls++; return { name: "123_保存時のお客様", state: input, ...(kind === "json" ? { pages: [], dispose() {} } : f.api.capturePages([first, second])) }; } });
     const pending = exporter.start(kind);
     input.fields.billName = "編集中のお客様"; input.work[0].content = "更新作業";
     first.textContent = "編集中のお客様"; second.textContent = "更新作業";
@@ -91,7 +91,7 @@ for (const pc of [true, false]) for (const kind of ["pdf", "json", "both"]) {
 test("share cancellation preserves both files and retries without another PDF generation", async () => {
   let attempts = 0, shared;
   const f = fixture({ navigator: { canShare: () => true, async share(data) { attempts++; shared = data; if (attempts === 1) throw Object.assign(new Error("cancel"), { name: "AbortError" }); } } });
-  const exporter = f.api.create({ isPC: () => false, capture() { return { name: "共有テスト", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
+  const exporter = f.api.create({ capture() { return { name: "共有テスト", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
   await exporter.start("both");
   const share = f.button("まとめて共有"); assert.ok(share);
   await share.click(); assert.match(f.text(), /キャンセル/);
@@ -103,10 +103,10 @@ test("share cancellation preserves both files and retries without another PDF ge
 
 test("an unsupported mixed-file share exposes both individual downloads", async () => {
   const f = fixture({ navigator: { canShare: ({ files }) => files.length === 1 && files[0].type === "application/pdf", share() {} } });
-  const exporter = f.api.create({ isPC: () => false, capture() { return { name: "非対応端末", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
+  const exporter = f.api.create({ capture() { return { name: "非対応端末", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
   await exporter.start("both");
   assert.equal(f.button("まとめて共有"), undefined);
-  assert.ok(f.buttons().some(button => button.getAttribute("aria-label") === "PDFを共有"));
+  assert.equal(f.buttons().length, 1, "partial sharing must not add redundant per-file actions");
   assert.equal(f.document.querySelectorAll("a").length, 2);
   assert.match(f.text(), /両方を個別に保存/);
   f.cleanup();
@@ -115,7 +115,7 @@ test("an unsupported mixed-file share exposes both individual downloads", async 
 test("partial directory write failure is explicit and aborts the failed stream", async () => {
   const f = fixture(); let written = 0, aborted = 0, picks = 0;
   f.global.showDirectoryPicker = async () => { picks++; return { async getFileHandle() { return { async createWritable() { return { async write() { if (++written === 2) throw new Error("disk full"); }, async close() {}, async abort() { aborted++; } }; } }; } }; };
-  const exporter = f.api.create({ isPC: () => true, capture() { return { name: "部分保存", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
+  const exporter = f.api.create({ capture() { return { name: "部分保存", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
   await exporter.start("both"); assert.equal(picks, 0, "picker must wait for a fresh user action after generation");
   await f.button("同じフォルダー").click();
   assert.equal(picks, 1); assert.equal(aborted, 1); assert.match(f.text(), /1／2件/);
@@ -124,13 +124,18 @@ test("partial directory write failure is explicit and aborts the failed stream",
   f.cleanup();
 });
 
-test("save picker cancellation allows a second attempt using the same generated JSON", async () => {
-  const f = fixture(); let picks = 0, saved;
-  f.global.showSaveFilePicker = async () => { if (++picks === 1) throw Object.assign(new Error("cancel"), { name: "AbortError" }); return { async createWritable() { return { async write(blob) { saved = blob; }, async close() {} }; } }; };
-  const exporter = f.api.create({ isPC: () => true, capture() { return { name: "再試行", state: { fields: { subject: "同一データ" } }, pages: [], dispose() {} }; } });
-  await exporter.start("json"); assert.equal(picks, 0);
-  const save = f.button("保存先を選ぶ"); await save.click(); assert.match(f.text(), /キャンセル/);
-  await save.click(); assert.equal(picks, 2); assert.equal(JSON.parse(await saved.text()).fields.subject, "同一データ");
+test("directory cancellation retries the same generated PDF and JSON", async () => {
+  const f = fixture(); let picks = 0; const saved = new Map();
+  f.global.showDirectoryPicker = async () => {
+    if (++picks === 1) throw Object.assign(new Error("cancel"), { name: "AbortError" });
+    return { async getFileHandle(name) { return { async createWritable() { return { async write(blob) { saved.set(name, blob); }, async close() {} }; } }; } };
+  };
+  const exporter = f.api.create({ capture() { return { name: "再試行", state: { fields: { subject: "同一データ" } }, pages: [new f.Element("section")] }; } });
+  await exporter.start("both"); assert.equal(picks, 0);
+  const save = f.button("同じフォルダー"); await save.click(); assert.match(f.text(), /キャンセル/);
+  await save.click(); assert.equal(picks, 2); assert.equal(saved.size, 2);
+  assert.equal(JSON.parse(await saved.get("再試行.json").text()).fields.subject, "同一データ");
+  assert.equal(f.captures.length, 1);
   f.cleanup();
 });
 
@@ -138,9 +143,13 @@ test("PDF generation failure releases temporary pages and closing allows a fresh
   let fail = true, disposed = 0;
   const f = fixture({ render: () => { if (fail) throw new Error("render failed"); } });
   const app = new f.Element("main"); app.className = "app"; f.document.body.appendChild(app);
-  const exporter = f.api.create({ isPC: () => true, capture() { return { name: "再生成", state: { fields: {} }, pages: [new f.Element("section")], dispose() { disposed++; } }; } });
+  const exporter = f.api.create({ capture() { return { name: "再生成", state: { fields: {} }, pages: [new f.Element("section")], dispose() { disposed++; } }; } });
   await exporter.start("both"); assert.match(f.text(), /render failed/); assert.equal(disposed, 1);
-  assert.equal(f.document.querySelectorAll("a").length, 0);
+  const recovery = f.document.querySelectorAll("a"); assert.equal(recovery.length, 1);
+  assert.ok(recovery[0].download.endsWith(".json"));
+  assert.doesNotMatch(f.document.querySelector("[role=status]").textContent, /準備ができました/);
+  await recovery[0].click(); assert.deepEqual(JSON.parse(await f.downloads[0].blob.text()), { fields: {} });
+  assert.equal(f.document.querySelector("h2").textContent, "PDF作成に失敗しました", "PDF failure stays visible after saving recovered JSON");
   await f.button("閉じる").click(); assert.equal(app.inert, false);
   fail = false; await exporter.start("both"); assert.equal(disposed, 2); assert.equal(f.document.querySelectorAll("a").length, 2);
   f.cleanup();
@@ -150,7 +159,7 @@ test("cancelling generation waits for the pending capture and leaves no download
   const wait = deferred(), started = deferred(); let disposed = 0;
   const f = fixture({ render: () => { started.resolve(); return wait.promise; } });
   const app = new f.Element("main"); app.className = "app"; f.document.body.appendChild(app);
-  const exporter = f.api.create({ isPC: () => true, capture() { return { name: "中止", state: { fields: {} }, pages: [new f.Element("section")], dispose() { disposed++; } }; } });
+  const exporter = f.api.create({ capture() { return { name: "中止", state: { fields: {} }, pages: [new f.Element("section")], dispose() { disposed++; } }; } });
   const pending = exporter.start("both");
   await started.promise;
   await f.button("中止").click(); assert.match(f.text(), /中止処理中/);
@@ -163,7 +172,7 @@ test("cancelling generation waits for the pending capture and leaves no download
 test("a failed or stalled signature preparation does not export incomplete data", async () => {
   for (const beforeCapture of [() => Promise.reject(new Error("invalid signature")), () => new Promise(() => {})]) {
     const f = fixture(); let captures = 0;
-    const exporter = f.api.create({ isPC: () => false, beforeCapture, capture() { captures++; } });
+    const exporter = f.api.create({ beforeCapture, capture() { captures++; } });
     await exporter.start("both");
     assert.equal(captures, 0); assert.equal(f.document.querySelectorAll("a").length, 0);
     assert.match(f.text(), /invalid signature|時間切れ/);
@@ -193,10 +202,11 @@ test("invalid PDF image fails explicitly without delivering a PDF that silently 
   const f = fixture();
   const sheet = new f.Element("section"), image = new f.Element("img"); image.complete = true; image.naturalWidth = 0; sheet.appendChild(image);
   let disposed = 0;
-  const exporter = f.api.create({ isPC: () => true, capture() { return { name: "画像不良", state: { fields: {} }, pages: [sheet], dispose() { disposed++; } }; } });
+  const exporter = f.api.create({ capture() { return { name: "画像不良", state: { fields: {} }, pages: [sheet], dispose() { disposed++; } }; } });
   await exporter.start("both");
   assert.match(f.text(), /画像を読み込めません/); assert.equal(f.captures.length, 0); assert.equal(disposed, 1);
-  assert.equal(f.document.querySelectorAll("a").length, 0);
+  assert.equal(f.document.querySelectorAll("a").length, 1);
+  assert.ok(f.document.querySelector("a").download.endsWith(".json"));
   f.cleanup();
 });
 
@@ -204,11 +214,12 @@ test("a stalled PDF renderer times out, disposes its isolated pages, and unlocks
   const f = fixture({ render: () => new Promise(() => {}) });
   const app = new f.Element("main"); app.className = "app"; f.document.body.appendChild(app);
   let disposed = 0;
-  const exporter = f.api.create({ isPC: () => true, capture() { return { name: "時間切れ", state: { fields: {} }, pages: [new f.Element("section")], dispose() { disposed++; } }; } });
+  const exporter = f.api.create({ capture() { return { name: "時間切れ", state: { fields: {} }, pages: [new f.Element("section")], dispose() { disposed++; } }; } });
   await exporter.start("both");
   assert.match(f.text(), /PDF作成が時間切れ/); assert.equal(disposed, 1);
-  assert.equal(f.downloads.length, 0); assert.equal(f.objectURLs.size, 0);
-  await f.button("閉じる").click(); assert.equal(app.inert, false);
+  assert.equal(f.downloads.length, 0); assert.equal(f.objectURLs.size, 1);
+  assert.ok(f.document.querySelector("a").download.endsWith(".json"));
+  await f.button("閉じる").click(); assert.equal(app.inert, false); assert.equal(f.objectURLs.size, 0);
   f.cleanup();
 });
 
@@ -231,11 +242,13 @@ test("PDF snapshot preserves standards doctype and report continuation CSS ances
 });
 
 test("ready instructions match available actions and each download stays with its filename", async () => {
-  for (const mode of ["download", "directory", "share"]) {
-    const f = fixture({ navigator: mode === "share" ? { canShare: () => true, share: async () => {} } : {} });
-    if (mode === "directory") f.global.showDirectoryPicker = async () => {};
-    const exporter = f.api.create({ isPC: () => mode !== "share", capture: () => ({ name: "同じ書類", state: {}, pages: [new f.Element("section")] }) });
+  for (const mode of ["download", "directory", "share", "both"]) {
+    const f = fixture({ navigator: ["share", "both"].includes(mode) ? { canShare: () => true, share: async () => {} } : {} });
+    if (["directory", "both"].includes(mode)) f.global.showDirectoryPicker = async () => {};
+    const exporter = f.api.create({ capture: () => ({ name: "同じ書類", state: {}, pages: [new f.Element("section")] }) });
     await exporter.start("both");
+    assert.equal(f.buttons().length, mode === "download" ? 1 : 2, "only close plus one supported bulk action");
+    assert.doesNotMatch(f.text(), /保存先を選ぶ/);
     const groups = f.document.querySelectorAll(".export-file");
     assert.equal(groups.length, 2);
     groups.forEach((group, i) => {
@@ -246,7 +259,7 @@ test("ready instructions match available actions and each download stays with it
     });
     const status = f.document.querySelector("[role=status]").textContent;
     if (mode === "download") { assert.doesNotMatch(status, /共有|フォルダー/); assert.match(status, /両方を個別に保存/); }
-    if (mode === "directory") { assert.match(status, /フォルダー/); assert.doesNotMatch(status, /共有/); }
+    if (["directory", "both"].includes(mode)) { assert.match(status, /フォルダー/); assert.doesNotMatch(status, /共有/); }
     if (mode === "share") assert.match(status, /まとめて共有/);
     f.cleanup();
   }
@@ -254,19 +267,19 @@ test("ready instructions match available actions and each download stays with it
 
 test("Escape during native saving does not leave a false cancellation state or discard files", async () => {
   const wait = deferred(), f = fixture();
-  f.global.showSaveFilePicker = () => wait.promise;
-  const exporter = f.api.create({ isPC: () => true, capture: () => ({ name: "保存中", state: {}, pages: [] }) });
-  await exporter.start("json");
-  const pending = f.button("保存先を選ぶ").click();
+  f.global.showDirectoryPicker = () => wait.promise;
+  const exporter = f.api.create({ capture: () => ({ name: "保存中", state: {}, pages: [new f.Element("section")] }) });
+  await exporter.start("both");
+  const pending = f.button("同じフォルダー").click();
   await f.document.querySelector("dialog").emit("cancel");
   assert.doesNotMatch(f.document.querySelector("[role=status]").textContent, /中止/);
-  assert.equal(f.document.querySelectorAll("a").length, 1);
+  assert.equal(f.document.querySelectorAll("a").length, 2);
   wait.reject(Object.assign(new Error("cancel"), { name: "AbortError" }));
   await pending;
   assert.match(f.document.querySelector("[role=status]").textContent, /再試行/);
   await f.button("閉じる").click();
   assert.equal(f.document.querySelectorAll("dialog").length, 0);
-  await exporter.start("json");
-  assert.equal(f.document.querySelectorAll("a").length, 1);
+  await exporter.start("both");
+  assert.equal(f.document.querySelectorAll("a").length, 2);
   f.cleanup();
 });

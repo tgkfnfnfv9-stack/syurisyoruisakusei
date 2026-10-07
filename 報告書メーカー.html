@@ -52,9 +52,6 @@ input:focus,select:focus{ outline:2px solid var(--navy2); border-color:var(--nav
 .btn-ghost{ background:#faf3ea; color:var(--navy); border:1px dashed var(--navy2); } .btn-ghost:hover{ background:#f5e9da; }
 .big{ padding:13px; font-size:14px; }
 .actions{ margin-top:16px; display:grid; gap:10px; }
-.split2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.devmode{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; margin-bottom:2px; }
-.devmode select{ padding:6px 8px; font-size:14px; border-radius:8px; border:1px solid var(--navy2); background:#fff; }
 .foot{ font-size:10.5px; color:#8a96a4; margin-top:8px; line-height:1.45; }
 .notice{ margin-top:10px; padding:7px 9px; font-size:11.5px; border-radius:6px; background:#fff5e6; border:1px solid #f0c987; color:#8a5a00; }
 .status{ font-size:11px; margin-top:6px; min-height:14px; line-height:1.4; } .status.ok{ color:var(--ok); } .status.err{ color:var(--accent); }
@@ -159,7 +156,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 .ss-actions .ok{ background:var(--ok); color:#fff; } .ss-actions .cancel{ background:#e9edf2; color:#333; }
 </style>
 <link rel="stylesheet" href="preview-zoom.css?v=20260930-zoom1">
-<link rel="stylesheet" href="document-export.css?v=20261007-export3">
+<link rel="stylesheet" href="document-export.css?v=20261008-export1">
 </head>
 <body>
 <div class="app">
@@ -353,19 +350,12 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
     <textarea id="textareaMeasure" style="display:none"></textarea>
     <div class="actions document-output">
-      <label class="devmode">利用端末<select id="devMode"><option value="mobile">携帯</option><option value="pc">パソコン</option></select></label>
       <button class="btn big export-primary" id="bothBtn">PDF・データを出力</button>
-      <div class="split2">
-        <button class="btn btn-ghost big" id="pdfBtn">PDFのみ出力</button>
-        <button class="btn btn-ghost big" id="dataBtn">データのみ出力</button>
-      </div>
-      <p class="foot export-help">PDFは閲覧・印刷用、データ（JSON）は再読み込み用です。次の画面で保存方法を選べます。</p>
-      <div class="export-utilities">
-        <button class="btn btn-ghost big" id="printBtn">印刷</button>
-        <button class="btn btn-ghost big" id="photoBtn">写真添付</button>
-      </div>
+      <p class="foot export-help">PDFとデータ（JSON）を同じ内容で作成します。印刷は保存したPDFを開いて行えます。</p>
     </div>
-    <p class="foot">A4・横推奨。</p>
+    <div class="actions document-utilities">
+      <button class="btn btn-ghost" id="photoBtn">写真添付（社内サイト）</button>
+    </div>
   </aside>
 
   <main class="preview">
@@ -857,7 +847,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script src="google-drive.js?v=20260930-audit1"></script>
 <script src="preview-zoom.js?v=20260930-zoom1"></script>
-<script src="document-export.js?v=20261007-export3"></script>
+<script src="document-export.js?v=20261008-export1"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1511,7 +1501,6 @@ document.addEventListener("DOMContentLoaded",()=>{
   document.querySelectorAll(".we-toggle").forEach(cb=>cb.addEventListener("change",syncWE));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow());
   outputController=KKMTDocumentExport.create({
-    isPC:()=>IS_PC,
     beforeCapture:async()=>{if(!await waitForReportSignature())throw new Error("サイン画像を確認してから、もう一度出力してください。");},
     capture(kind){
       if(kind!=="json")flushReportPreview();
@@ -1522,17 +1511,8 @@ document.addEventListener("DOMContentLoaded",()=>{
       return {...captured,state,name,quality:0.92};
     }
   });
-  function exportPDF(){ return outputController.start("pdf"); }
   function saveBoth(){ return outputController.start("both"); }
-  function saveDataOnly(){ return outputController.start("json"); }
-  async function doPrint(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();await waitForReportSignature();flushReportPreview(); fitAllCells(); setTimeout(()=>window.print(),80); }
-  $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth);
-  $("pdfBtn").addEventListener("click",exportPDF); $("dataBtn").addEventListener("click",saveDataOnly);
-  let IS_PC=false;
-  function applyDeviceMode(){ const sel=$("devMode"); if(!sel)return; IS_PC=(sel.value==="pc");
-    const pb=$("printBtn"); if(pb)pb.style.display=IS_PC?"":"none";
-    try{ localStorage.setItem("kkmt_devmode", sel.value); }catch(e){} }
-  (function initDevMode(){ let saved=null; try{ saved=localStorage.getItem("kkmt_devmode"); }catch(e){} const guess=(navigator.canShare && matchMedia("(pointer:coarse)").matches)?"mobile":"pc"; $("devMode").value=(saved==="pc"||saved==="mobile")?saved:guess; applyDeviceMode(); $("devMode").addEventListener("change",applyDeviceMode); })();
+  $("bothBtn").addEventListener("click",saveBoth);
   function openPhotoAttach(){ const code=(($("mKocon")&&$("mKocon").value)||"").trim();
     const base="https://www.kkmt.co.jp/staff/projects/short_search";
     const url=code?`${base}?utf8=%E2%9C%93&code=${encodeURIComponent(code)}`:base;
