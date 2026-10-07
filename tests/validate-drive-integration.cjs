@@ -134,11 +134,17 @@ assert.match(drive, /await adoptFlushedRevision\(results, startingSnapshot\)/);
 assert.match(drive, /共通Driveバックエンド経由で保存してください/);
 assert.match(estimateApp, /onIdentityChanging:cancelPendingFormUpdates/);
 assert.match(reportApp, /onIdentityChanging:cancelPendingFormUpdates/);
-assert.match(estimateApp, /buildOutputPair/);
-assert.match(reportApp, /buildOutputPair/);
-assert.match(estimateApp, /driveAutosaveController\.whenIdle/);
-assert.match(reportApp, /driveAutosaveController\.whenIdle/);
-assert.match(reportApp, /async function saveState\(\)\{ if\(driveAutosaveController&&driveAutosaveController\.whenIdle\)await driveAutosaveController\.whenIdle\(\)/);
+for (const application of [estimateApp, reportApp]) {
+  assert.match(application, /KKMTDocumentExport\.create\(/);
+  assert.match(application, /KKMTDocumentExport\.capturePages\(/);
+  for (const kind of ["pdf", "json", "both"]) {
+    assert.ok(application.includes(`outputController.start("${kind}")`));
+  }
+  const capture = application.slice(application.indexOf("capture(kind){"), application.indexOf("return {...captured,state,name"));
+  assert.doesNotMatch(capture, /whenIdle|await/, "capture must freeze JSON, filename and pages synchronously without cloud waits");
+  assert.match(capture, /JSON\.parse\(JSON\.stringify\(collectState\(\)\)\)/);
+}
+assert.match(reportApp, /async function saveState\(\)\{ if\(outputController\)return outputController\.start\("json"\); \}/);
 assert.match(reportApp, /restoreReportDirectEdits\(\); recalcReport\(\)/);
 assert.match(reportApp, /const firstWorkId=/);
 assert.match(reportApp, /workers","activeWorkers/);

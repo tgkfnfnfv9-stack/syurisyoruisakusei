@@ -1,0 +1,9 @@
+.document-export{margin:auto;width:min(92vw,460px);max-height:85vh;overflow:auto;padding:22px;border:1px solid #ddd;border-radius:12px;background:#fff;color:#1a1a1a;box-shadow:0 12px 50px #0004;font-size:14px;line-height:1.6}
+.document-export::backdrop{background:#0007}
+.document-export h2{font-size:18px;margin-bottom:12px}
+.document-export p{margin:12px 0;overflow-wrap:anywhere}
+.document-export button,.document-export a{display:block;width:100%;margin-top:10px;padding:12px;border:1px solid #d46f00;border-radius:8px;background:#fff7eb;color:#1a1a1a;text-align:center;text-decoration:none;font:inherit;cursor:pointer}
+.document-export button:disabled,.document-export [aria-disabled=true]{opacity:.5;cursor:wait}
+.document-export .export-actions button:first-child{background:#f08200;color:#fff;font-weight:700}
+.document-export>button:last-child{border-color:#ccc;background:#f4f4f4}
+@media print{.document-export{display:none!important}}
