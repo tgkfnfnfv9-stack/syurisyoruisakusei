@@ -144,7 +144,7 @@ for (const application of [estimateApp, reportApp]) {
   assert.doesNotMatch(capture, /whenIdle|await/, "capture must freeze JSON, filename and pages synchronously without cloud waits");
   assert.match(capture, /JSON\.parse\(JSON\.stringify\(collectState\(\)\)\)/);
 }
-assert.match(reportApp, /async function saveState\(\)\{ if\(outputController\)return outputController\.start\("json"\); \}/);
+assert.doesNotMatch(report, /id="saveBtn"|function saveState\(/, "report JSON output must use the shared output controls");
 assert.match(reportApp, /restoreReportDirectEdits\(\); recalcReport\(\)/);
 assert.match(reportApp, /const firstWorkId=/);
 assert.match(reportApp, /workers","activeWorkers/);

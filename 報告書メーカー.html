@@ -159,7 +159,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 .ss-actions .ok{ background:var(--ok); color:#fff; } .ss-actions .cancel{ background:#e9edf2; color:#333; }
 </style>
 <link rel="stylesheet" href="preview-zoom.css?v=20260930-zoom1">
-<link rel="stylesheet" href="document-export.css?v=20261007-export1">
+<link rel="stylesheet" href="document-export.css?v=20261007-export2">
 </head>
 <body>
 <div class="app">
@@ -170,7 +170,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     </div>
     <h1>作業報告書メーカー</h1>
     <p class="sub">株式会社 小林機械 / EAST JAPAN MACHINE PLAZA</p>
-    <div class="io"><button id="saveBtn">💾 PCに保存</button><button id="loadBtn">📂 読み込み</button><button id="estBtn">📥 見積取込</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"><input id="estFile" type="file" accept="application/json,.json" class="hidden"></div>
+    <div class="io"><button id="loadBtn">📂 読み込み</button><button id="estBtn">📥 見積取込</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"><input id="estFile" type="file" accept="application/json,.json" class="hidden"></div>
 
     <section class="card drive-card">
       <h2>高コン／見積もり番号・共通Drive</h2>
@@ -352,14 +352,19 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     </section>
 
     <textarea id="textareaMeasure" style="display:none"></textarea>
-    <div class="actions"><label class="devmode">出力先<select id="devMode"><option value="mobile">携帯（共有）</option><option value="pc">パソコン（保存）</option></select></label>
-      <button class="btn btn-blue big" id="printBtn">印刷</button>
-      <button class="btn btn-blue big" id="photoBtn">写真添付</button>
-      <button class="btn btn-blue big" id="bothBtn">PDF、データ両方保存</button>
+    <div class="actions document-output">
+      <label class="devmode">利用端末<select id="devMode"><option value="mobile">携帯</option><option value="pc">パソコン</option></select></label>
+      <button class="btn big export-primary" id="bothBtn">PDF・データを出力</button>
       <div class="split2">
-        <button class="btn btn-blue big" id="pdfBtn">PDF保存</button>
-        <button class="btn btn-blue big" id="dataBtn">データ保存</button>
-      </div></div>
+        <button class="btn btn-ghost big" id="pdfBtn">PDFのみ出力</button>
+        <button class="btn btn-ghost big" id="dataBtn">データのみ出力</button>
+      </div>
+      <p class="foot export-help">PDFは閲覧・印刷用、データ（JSON）は再読み込み用です。次の画面で保存方法を選べます。</p>
+      <div class="export-utilities">
+        <button class="btn btn-ghost big" id="printBtn">印刷</button>
+        <button class="btn btn-ghost big" id="photoBtn">写真添付</button>
+      </div>
+    </div>
     <p class="foot">A4・横推奨。</p>
   </aside>
 
@@ -852,7 +857,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script src="google-drive.js?v=20260930-audit1"></script>
 <script src="preview-zoom.js?v=20260930-zoom1"></script>
-<script src="document-export.js?v=20261007-export1"></script>
+<script src="document-export.js?v=20261007-export2"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1109,7 +1114,6 @@ function fileBaseName(){ const kocon=(($("mKocon")&&$("mKocon").value)||"").trim
   const company=($("billName").value.trim()||$("client").value.trim()||"作業報告書");
   return [...[kocon,company].filter(Boolean),"報告書"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
 let outputController=null;
-async function saveState(){ if(outputController)return outputController.start("json"); }
 function applyState(raw){ if(!raw)return; const s=validateReportState(raw); invalidateRouteRequests(); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); const fields={...initialFieldValues,...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo;
   const workRows=normalizeWorkRows(s.work); const incomingWorkers=Array.isArray(s.workers)?s.workers:[]; const workWorkers=workRows.flatMap(w=>w.people.map(p=>p.worker).filter(Boolean));
   WORKERS=[...new Set([...DEFAULT_WORKERS,...WORKERS,...incomingWorkers,...workWorkers])]; saveWorkers();
@@ -1484,7 +1488,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   ["billName","billAddr","billTel"].forEach(id=>$(id).addEventListener("input",()=>{ if($("sameAsSite").checked)syncSameState(true); }));
   syncSameState(true);
   $("apiKey").addEventListener("change",()=>{ try{localStorage.setItem("kkmt_gkey",$("apiKey").value.trim());}catch{} });
-  $("saveBtn").addEventListener("click",saveState); $("loadBtn").addEventListener("click",()=>$("loadFile").click());
+  $("loadBtn").addEventListener("click",()=>$("loadFile").click());
   $("estBtn").addEventListener("click",()=>$("estFile").click());
   $("estFile").addEventListener("change",async e=>{
     e.stopPropagation();const f=e.target.files[0];e.target.value="";if(!f)return;
@@ -1527,10 +1531,6 @@ document.addEventListener("DOMContentLoaded",()=>{
   let IS_PC=false;
   function applyDeviceMode(){ const sel=$("devMode"); if(!sel)return; IS_PC=(sel.value==="pc");
     const pb=$("printBtn"); if(pb)pb.style.display=IS_PC?"":"none";
-    const set=(id,t)=>{ const b=$(id); if(b)b.textContent=t; };
-    set("bothBtn", IS_PC?"PDF・データ両方保存":"PDF・データ両方を共有");
-    set("pdfBtn",  IS_PC?"PDF保存":"PDFを共有");
-    set("dataBtn", IS_PC?"データ保存":"データを共有");
     try{ localStorage.setItem("kkmt_devmode", sel.value); }catch(e){} }
   (function initDevMode(){ let saved=null; try{ saved=localStorage.getItem("kkmt_devmode"); }catch(e){} const guess=(navigator.canShare && matchMedia("(pointer:coarse)").matches)?"mobile":"pc"; $("devMode").value=(saved==="pc"||saved==="mobile")?saved:guess; applyDeviceMode(); $("devMode").addEventListener("change",applyDeviceMode); })();
   function openPhotoAttach(){ const code=(($("mKocon")&&$("mKocon").value)||"").trim();

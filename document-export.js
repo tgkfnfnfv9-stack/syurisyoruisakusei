@@ -72,12 +72,12 @@
     async function start(kind){
       if(busy||dialog)return;
       busy=true;
-      let snapshot,files=[],urls=[],cancelled=false,working=true;
+      let snapshot,files=[],urls=[],cancelled=false,working=true,generating=true;
       const app=doc.querySelector(".app"),wasInert=app&&app.inert,focus=doc.activeElement;
       const check=()=>{if(cancelled)throw abortError();};
       dialog=doc.createElement("dialog");dialog.className="document-export";
       dialog.setAttribute("aria-labelledby","export-title");
-      const heading=doc.createElement("h2");heading.id="export-title";heading.textContent="保存・共有";
+      const heading=doc.createElement("h2");heading.id="export-title";heading.textContent=kind==="both"?"PDF・データの出力":kind==="pdf"?"PDFの出力":"データ（JSON）の出力";
       const status=doc.createElement("p");status.setAttribute("role","status");status.setAttribute("aria-live","polite");
       const actions=doc.createElement("div");actions.className="export-actions";
       const close=doc.createElement("button");close.type="button";close.textContent="中止";
@@ -91,16 +91,17 @@
         if(focus&&focus.focus)focus.focus();
       };
       const requestClose=()=>{
+        if(working&&!generating)return;
         if(working){cancelled=true;close.disabled=true;progress("中止処理中…");}
         else cleanup();
       };
       close.addEventListener("click",requestClose);
       dialog.addEventListener("cancel",event=>{event.preventDefault();requestClose();});
-      const button=(label,action)=>{
-        const el=doc.createElement("button");el.type="button";el.textContent=label;actions.appendChild(el);
+      const button=(label,action,parent=actions,primary=false)=>{
+        const el=doc.createElement("button");el.type="button";el.textContent=label;if(primary)el.className="export-primary";parent.appendChild(el);
         el.addEventListener("click",async()=>{
           if(working)return;
-          working=true;close.disabled=true;
+          working=true;close.disabled=true;progress("保存・共有の操作中です…");
           const controls=Array.from(actions.querySelectorAll("button,a"));
           controls.forEach(node=>{node.disabled=true;node.setAttribute("aria-disabled","true");});
           try{await action();}
@@ -115,37 +116,52 @@
         catch(error){if(stream&&stream.abort)try{await stream.abort();}catch(_){}throw error;}
       }
       function ready(){
-        const pc=options.isPC();
-        if(!pc&&canShare(files))button(files.length>1?"PDF・JSONをまとめて共有":"ファイルを共有",async()=>{
+        const pc=options.isPC(),multiple=files.length>1;
+        const shareAll=!pc&&canShare(files);
+        const directoryAvailable=pc&&multiple&&!!global.showDirectoryPicker;
+        const labelOf=f=>f.name.endsWith(".pdf")?"PDF":"データ（JSON）";
+        if(shareAll)button(multiple?"PDF・データをまとめて共有":labelOf(files[0])+"を共有",async()=>{
           await global.navigator.share({files:files.map(f=>f.file),title:snapshot.name});
           progress("共有先に渡しました。共有先でファイルを確認してください。");
-        });
-        if(pc&&files.length>1&&global.showDirectoryPicker)button("同じフォルダーに両方保存",async()=>{
+        },actions,true);
+        if(directoryAvailable)button("同じフォルダーに両方保存",async()=>{
           const directory=await global.showDirectoryPicker({mode:"readwrite"});
           let saved=0;
           try{for(const f of files){await write(await directory.getFileHandle(f.name,{create:true}),f.blob);saved++;}}
           catch(error){progress(`${saved}／${files.length}件を保存しました。保存できなかったファイルは下から個別に保存してください。`);return;}
-          progress("PDF・JSONの両方を保存しました。");
-        });
+          progress("PDF・データの両方を保存しました。");
+        },actions,true);
         for(const f of files){
-          const label=f.name.endsWith(".pdf")?"PDF":"JSONデータ";
-          if(pc&&global.showSaveFilePicker)button(label+"の保存先を選ぶ",async()=>{
+          const label=labelOf(f);
+          const group=doc.createElement("section");group.className="export-file";
+          const title=doc.createElement("h3");title.textContent=label;
+          const filename=doc.createElement("p");filename.className="export-filename";filename.textContent=f.name;
+          const row=doc.createElement("div");row.className="export-file-actions";
+          group.append(title,filename,row);actions.appendChild(group);
+          const picker=pc&&!!global.showSaveFilePicker;
+          if(picker)button(label+"の保存先を選ぶ",async()=>{
             const ext=f.name.endsWith(".pdf")?".pdf":".json";
             const handle=await global.showSaveFilePicker({suggestedName:f.name,types:[{description:label,accept:{[f.blob.type]:[ext]}}]});
             await write(handle,f.blob);progress(label+"を保存しました。");
-          });
-          else if(!pc&&canShare([f])&&files.length>1)button(label+"を共有",async()=>{
+          },row,!multiple&&!shareAll);
+          else if(!pc&&canShare([f])&&multiple)button(label+"を共有",async()=>{
             await global.navigator.share({files:[f.file],title:f.name});progress(label+"を共有先に渡しました。");
-          });
+          },row);
           // One genuine user gesture per file: never chain downloads or open popups.
           const link=doc.createElement("a");const url=global.URL.createObjectURL(f.blob);urls.push(url);
-          link.href=url;link.download=f.name;link.textContent=label+"を保存";
+          link.href=url;link.download=f.name;link.textContent=label+"をダウンロード";
+          if(!picker&&!shareAll&&!directoryAvailable)link.className="export-primary";
           link.addEventListener("click",event=>{
             if(working){event.preventDefault();return;}
-            progress(label+"の保存を開始しました。端末のダウンロードを確認してください。");
-          });actions.appendChild(link);
+            progress(label+"のダウンロードを開始しました。端末でファイルを確認してください。");
+          });row.appendChild(link);
         }
-        progress(files.length>1?"PDF・JSONの準備ができました。同時共有が使えない場合は、両方を個別に保存してください。":"準備ができました。保存または共有してください。");
+        progress(multiple
+          ?(shareAll?"準備ができました。まとめて共有するか、両方を個別に保存してください。"
+            :directoryAvailable?"準備ができました。同じフォルダーに両方保存するか、個別に保存してください。"
+            :"準備ができました。PDFとデータの両方を個別に保存してください。")
+          :shareAll?"準備ができました。共有またはダウンロードしてください。"
+          :"準備ができました。下から保存してください。");
       }
       try{
         // Blur commits contenteditable/input changes before the atomic capture.
@@ -168,7 +184,7 @@
         progress(error.message||"作成に失敗しました。閉じてから再実行してください。");
       }finally{
         if(snapshot&&snapshot.dispose)snapshot.dispose();
-        working=false;busy=false;close.disabled=false;close.textContent="閉じる";
+        generating=false;working=false;busy=false;close.disabled=false;close.textContent="閉じる";
       }
     }
     return {start};

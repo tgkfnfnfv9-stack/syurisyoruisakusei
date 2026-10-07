@@ -229,3 +229,44 @@ test("PDF snapshot preserves standards doctype and report continuation CSS ances
   snapshot.dispose(); assert.equal(f.document.querySelector("iframe"), null);
   f.cleanup();
 });
+
+test("ready instructions match available actions and each download stays with its filename", async () => {
+  for (const mode of ["download", "directory", "share"]) {
+    const f = fixture({ navigator: mode === "share" ? { canShare: () => true, share: async () => {} } : {} });
+    if (mode === "directory") f.global.showDirectoryPicker = async () => {};
+    const exporter = f.api.create({ isPC: () => mode !== "share", capture: () => ({ name: "同じ書類", state: {}, pages: [new f.Element("section")] }) });
+    await exporter.start("both");
+    const groups = f.document.querySelectorAll(".export-file");
+    assert.equal(groups.length, 2);
+    groups.forEach((group, i) => {
+      const link = group.querySelector("a");
+      assert.equal(link.download, "同じ書類" + (i ? ".json" : ".pdf"));
+      assert.equal(group.querySelector(".export-filename").textContent, link.download);
+      assert.match(link.textContent, /ダウンロード/);
+    });
+    const status = f.document.querySelector("[role=status]").textContent;
+    if (mode === "download") { assert.doesNotMatch(status, /共有|フォルダー/); assert.match(status, /両方を個別に保存/); }
+    if (mode === "directory") { assert.match(status, /フォルダー/); assert.doesNotMatch(status, /共有/); }
+    if (mode === "share") assert.match(status, /まとめて共有/);
+    f.cleanup();
+  }
+});
+
+test("Escape during native saving does not leave a false cancellation state or discard files", async () => {
+  const wait = deferred(), f = fixture();
+  f.global.showSaveFilePicker = () => wait.promise;
+  const exporter = f.api.create({ isPC: () => true, capture: () => ({ name: "保存中", state: {}, pages: [] }) });
+  await exporter.start("json");
+  const pending = f.button("保存先を選ぶ").click();
+  await f.document.querySelector("dialog").emit("cancel");
+  assert.doesNotMatch(f.document.querySelector("[role=status]").textContent, /中止/);
+  assert.equal(f.document.querySelectorAll("a").length, 1);
+  wait.reject(Object.assign(new Error("cancel"), { name: "AbortError" }));
+  await pending;
+  assert.match(f.document.querySelector("[role=status]").textContent, /再試行/);
+  await f.button("閉じる").click();
+  assert.equal(f.document.querySelectorAll("dialog").length, 0);
+  await exporter.start("json");
+  assert.equal(f.document.querySelectorAll("a").length, 1);
+  f.cleanup();
+});
