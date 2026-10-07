@@ -100,7 +100,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 @media (max-width:900px){ .app{ grid-template-columns:1fr; height:auto; } .preview{ overflow-x:auto; } }
 </style>
 <link rel="stylesheet" href="preview-zoom.css?v=20260930-zoom1">
-<link rel="stylesheet" href="document-export.css?v=20261007-export1">
+<link rel="stylesheet" href="document-export.css?v=20261007-export2">
 </head>
 <body>
 <div class="app">
@@ -235,13 +235,18 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
       <button class="btn btn-ghost" id="addPart" style="margin-top:9px;">＋ 部品を追加</button>
     </section>
 
-    <div class="actions"><label class="devmode">出力先<select id="devMode"><option value="mobile">携帯（共有）</option><option value="pc">パソコン（保存）</option></select></label>
-      <button class="btn btn-blue big" id="printBtn">印刷</button>
-      <button class="btn btn-blue big" id="bothBtn">PDF、データ両方保存</button>
+    <div class="actions document-output">
+      <label class="devmode">利用端末<select id="devMode"><option value="mobile">携帯</option><option value="pc">パソコン</option></select></label>
+      <button class="btn big export-primary" id="bothBtn">PDF・データを出力</button>
       <div class="split2">
-        <button class="btn btn-blue big" id="pdfBtn">PDF保存</button>
-        <button class="btn btn-blue big" id="dataBtn">データ保存</button>
-      </div></div>
+        <button class="btn btn-ghost big" id="pdfBtn">PDFのみ出力</button>
+        <button class="btn btn-ghost big" id="dataBtn">データのみ出力</button>
+      </div>
+      <p class="foot export-help">PDFは閲覧・印刷用、データ（JSON）は再読み込み用です。次の画面で保存方法を選べます。</p>
+      <div class="export-utilities">
+        <button class="btn btn-ghost big" id="printBtn">印刷</button>
+      </div>
+    </div>
     <p class="foot">通常明細の「備考」と、基本料金一覧と同じ横列にある「品名」枠はクリックで直接編集できます。明細の行番号横「×」で行削除。A4・横推奨。</p>
   </aside>
 
@@ -713,7 +718,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script src="google-drive.js?v=20260930-audit1"></script>
 <script src="preview-zoom.js?v=20260930-zoom1"></script>
-<script src="document-export.js?v=20261007-export1"></script>
+<script src="document-export.js?v=20261007-export2"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1016,11 +1021,7 @@ const outputController=KKMTDocumentExport.create({
 });
 let IS_PC=false;
 function applyDeviceMode(){ const sel=$("devMode"); if(!sel)return; IS_PC=(sel.value==="pc");
-  const pb=$("printBtn"); if(pb)pb.style.display=IS_PC?"":"none";
-  const set=(id,t)=>{ const b=$(id); if(b)b.textContent=t; };
-  set("bothBtn", IS_PC?"PDF・データ両方保存":"PDF・データ両方を共有");
-  set("pdfBtn",  IS_PC?"PDF保存":"PDFを共有");
-  set("dataBtn", IS_PC?"データ保存":"データを共有");
+  const pb=$("printBtn"); if(pb){pb.style.display=IS_PC?"":"none";pb.parentElement.hidden=!IS_PC;}
   try{ localStorage.setItem("kkmt_devmode", sel.value); }catch(e){} }
 function saveBoth(){ return outputController.start("both"); }
 function savePdfOnly(){ return outputController.start("pdf"); }
