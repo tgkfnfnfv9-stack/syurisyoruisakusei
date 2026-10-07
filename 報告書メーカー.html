@@ -159,6 +159,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 .ss-actions .ok{ background:var(--ok); color:#fff; } .ss-actions .cancel{ background:#e9edf2; color:#333; }
 </style>
 <link rel="stylesheet" href="preview-zoom.css?v=20260930-zoom1">
+<link rel="stylesheet" href="document-export.css?v=20261007-export1">
 </head>
 <body>
 <div class="app">
@@ -851,6 +852,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script src="google-drive.js?v=20260930-audit1"></script>
 <script src="preview-zoom.js?v=20260930-zoom1"></script>
+<script src="document-export.js?v=20261007-export1"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1106,15 +1108,8 @@ function collectState(){ const s={documentType:"report",schemaVersion:2,_kkmtRev
 function fileBaseName(){ const kocon=(($("mKocon")&&$("mKocon").value)||"").trim();
   const company=($("billName").value.trim()||$("client").value.trim()||"作業報告書");
   return [...[kocon,company].filter(Boolean),"報告書"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
-async function saveState(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();await waitForReportSignature();const s=collectState(); const name=fileBaseName()+".json";
-  const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});
-  const file=new File([blob],name,{type:"application/json"});
-  if(navigator.canShare && navigator.canShare({files:[file]})){
-    try{ await navigator.share({files:[file],title:name}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
-  }
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove();
-  setTimeout(()=>{ try{ window.open(url,"_blank"); }catch(e){} setTimeout(()=>URL.revokeObjectURL(url),60000); },800); }
+let outputController=null;
+async function saveState(){ if(outputController)return outputController.start("json"); }
 function applyState(raw){ if(!raw)return; const s=validateReportState(raw); invalidateRouteRequests(); _documentRevision=Math.max(0,Number(s._kkmtRevision)||0); clearTimeout(_livePreviewT); const fields={...initialFieldValues,...(s.fields||{})}; if(!fields.mKocon&&fields.estNo)fields.mKocon=fields.estNo;
   const workRows=normalizeWorkRows(s.work); const incomingWorkers=Array.isArray(s.workers)?s.workers:[]; const workWorkers=workRows.flatMap(w=>w.people.map(p=>p.worker).filter(Boolean));
   WORKERS=[...new Set([...DEFAULT_WORKERS,...WORKERS,...incomingWorkers,...workWorkers])]; saveWorkers();
@@ -1511,84 +1506,25 @@ document.addEventListener("DOMContentLoaded",()=>{
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   document.querySelectorAll(".we-toggle").forEach(cb=>cb.addEventListener("change",syncWE));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow());
-  async function buildReportPdf(flush=true){
-    if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();
-    await waitForReportSignature();
-    if(flush)flushReportPreview();
-    fitAllCells();
-    if(!(window.html2canvas && window.jspdf)){ alert("PDF部品の読み込みに失敗しました。ページを開き直してください。"); return null; }
-    const {jsPDF}=window.jspdf;
-    const pdf=new jsPDF({orientation:"landscape",unit:"mm",format:"a4"});
-    const pw=pdf.internal.pageSize.getWidth(), ph=pdf.internal.pageSize.getHeight(), m=5;
-    const availW=pw-2*m, availH=ph-2*m;
-    const pages=[$("sheet")]; const ex=$("sheetExtra"); if(ex)ex.querySelectorAll(".sheet").forEach(s=>pages.push(s));
-    for(let i=0;i<pages.length;i++){
-      const canvas=await html2canvas(pages[i],{scale:2,backgroundColor:"#ffffff",useCORS:true,onclone:doc=>{if(window.KKMTPreviewZoom)KKMTPreviewZoom.prepareExport(doc);}});
-      const ratio=canvas.width/canvas.height; let w=availW, h=w/ratio; if(h>availH){ h=availH; w=h*ratio; }
-      const x=m+(availW-w)/2, y=m;
-      if(i>0)pdf.addPage();
-      pdf.addImage(canvas.toDataURL("image/jpeg",0.92),"JPEG",x,y,w,h);
+  outputController=KKMTDocumentExport.create({
+    isPC:()=>IS_PC,
+    beforeCapture:async()=>{if(!await waitForReportSignature())throw new Error("サイン画像を確認してから、もう一度出力してください。");},
+    capture(kind){
+      if(kind!=="json")flushReportPreview();
+      const state=JSON.parse(JSON.stringify(collectState())),name=fileBaseName();
+      const pages=[$("sheet")],extra=$("sheetExtra");
+      if(extra)extra.querySelectorAll(".sheet").forEach(page=>pages.push(page));
+      const captured=kind==="json"?{}:KKMTDocumentExport.capturePages(pages);
+      return {...captured,state,name,quality:0.92};
     }
-    const name=fileBaseName()+".pdf";
-    const blob=pdf.output("blob");
-    return {blob,name,file:new File([blob],name,{type:"application/pdf"})};
-  }
-  function buildStateFile(state=null,flush=true){
-    if(flush)flushReportPreview(); const s=state||collectState(); const name=fileBaseName()+".json";
-    const blob=new Blob([JSON.stringify(s,null,2)],{type:"application/json"});
-    return {blob,name,file:new File([blob],name,{type:"application/json"})};
-  }
-  async function buildOutputPair(){
-    if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();
-    await waitForReportSignature();
-    const app=document.querySelector(".app"); const oldPointer=app.style.pointerEvents; const oldInert=app.inert;
-    try{ if(document.activeElement&&document.activeElement.blur)document.activeElement.blur(); flushReportPreview(); const snapshot=collectState(); app.style.pointerEvents="none"; app.inert=true; const pdf=await buildReportPdf(false); if(!pdf)return null; return {pdf,json:buildStateFile(snapshot,false)}; }
-    finally{ app.inert=oldInert; app.style.pointerEvents=oldPointer; }
-  }
-  function downloadBlob(blob,name,openTab){
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove();
-    setTimeout(()=>{ if(openTab){ try{ window.open(url,"_blank"); }catch(e){} } setTimeout(()=>URL.revokeObjectURL(url),60000); },800);
-  }
-  async function exportPDF(){
-    try{ const r=await buildReportPdf(); if(!r)return;
-      if(!IS_PC && navigator.canShare && navigator.canShare({files:[r.file]})){
-        try{ await navigator.share({files:[r.file],title:r.name}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
-      }
-      if(await pcSaveOne(r.blob,r.name,"application/pdf",".pdf")) return;
-      downloadBlob(r.blob,r.name,true);
-    }catch(e){ console.error(e); alert("PDFの作成に失敗しました。もう一度お試しください。"); }
-  }
-  async function saveBoth(){
-    try{
-      let dir=null;
-      if(IS_PC && window.showDirectoryPicker){ try{ dir=await window.showDirectoryPicker({mode:"readwrite"}); }catch(err){ if(err&&err.name==="AbortError")return; dir=null; } }
-      const pair=await buildOutputPair(); if(!pair)return; const {pdf,json}=pair;
-      if(dir){ try{ for(const f of [json,pdf]){ const fh=await dir.getFileHandle(f.name,{create:true}); const w=await fh.createWritable(); await w.write(f.blob); await w.close(); } return; }catch(err){ console.error(err); } }
-      if(!IS_PC && navigator.canShare && navigator.canShare({files:[pdf.file,json.file]})){
-        try{ await navigator.share({files:[pdf.file,json.file],title:"報告書PDF＋データ"}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
-      }
-      downloadBlob(json.blob,json.name,false);
-      setTimeout(()=>downloadBlob(pdf.blob,pdf.name,true),1200);
-    }catch(e){ console.error(e); alert("保存に失敗しました。もう一度お試しください。"); }
-  }
-  async function saveDataOnly(){
-    try{ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();await waitForReportSignature();const json=buildStateFile();
-      if(!IS_PC && navigator.canShare && navigator.canShare({files:[json.file]})){
-        try{ await navigator.share({files:[json.file],title:json.name}); return; }catch(err){ if(err&&err.name==="AbortError")return; }
-      }
-      if(await pcSaveOne(json.blob,json.name,"application/json",".json")) return;
-      downloadBlob(json.blob,json.name,false);
-    }catch(e){ console.error(e); alert("データの保存に失敗しました。もう一度お試しください。"); }
-  }
+  });
+  function exportPDF(){ return outputController.start("pdf"); }
+  function saveBoth(){ return outputController.start("both"); }
+  function saveDataOnly(){ return outputController.start("json"); }
   async function doPrint(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle();await waitForReportSignature();flushReportPreview(); fitAllCells(); setTimeout(()=>window.print(),80); }
   $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth);
   $("pdfBtn").addEventListener("click",exportPDF); $("dataBtn").addEventListener("click",saveDataOnly);
   let IS_PC=false;
-  async function pcSaveOne(blob,name,mime,ext){ if(!(IS_PC && window.showSaveFilePicker)) return false;
-    let h; try{ h=await window.showSaveFilePicker({suggestedName:name,types:[{description:mime,accept:{[mime]:[ext]}}]}); }
-    catch(err){ if(err&&err.name==="AbortError") return true; return false; }
-    try{ const w=await h.createWritable(); await w.write(blob); await w.close(); return true; }catch(err){ console.error(err); return false; } }
   function applyDeviceMode(){ const sel=$("devMode"); if(!sel)return; IS_PC=(sel.value==="pc");
     const pb=$("printBtn"); if(pb)pb.style.display=IS_PC?"":"none";
     const set=(id,t)=>{ const b=$(id); if(b)b.textContent=t; };

@@ -417,11 +417,15 @@ test("both PDF paths prepare only html2canvas's clone and print CSS restores nat
     const application = html.slice(html.lastIndexOf("<script>") + 8, html.lastIndexOf("</script>"));
     assert.match(html, /<link[^>]+href="preview-zoom\.css\?/);
     assert.match(html, /<script[^>]+src="preview-zoom\.js\?/);
-    assert.match(application, /onclone\s*:\s*doc\s*=>\s*\{[^}]*KKMTPreviewZoom\.prepareExport\(doc\)/);
-    const calls = [...application.matchAll(/KKMTPreviewZoom\.prepareExport\(([^)]*)\)/g)];
-    assert.equal(calls.length, 1, `${filename} must prepare the clone once per canvas capture`);
-    assert.equal(calls[0][1], "doc", `${filename} must not reset the live document to export a PDF`);
+    assert.match(html, /<script[^>]+src="document-export\.js\?/);
+    assert.match(application, /KKMTDocumentExport\.capturePages\(/);
+    assert.doesNotMatch(application, /KKMTPreviewZoom\.prepareExport\(document\)/);
+
   }
+  const exporter = fs.readFileSync(path.join(root, "document-export.js"), "utf8");
+  assert.match(exporter, /onclone\s*:\s*doc\s*=>\s*\{[^}]*KKMTPreviewZoom\.prepareExport\(doc\)/);
+  assert.match(exporter, /copy\.style\.transform="none";copy\.style\.zoom="1"/);
+  assert.doesNotMatch(exporter, /KKMTPreviewZoom\.prepareExport\(global\.document\)/);
   const css = fs.readFileSync(path.join(root, "preview-zoom.css"), "utf8");
   assert.match(css, /\.preview\[data-preview-zoom-active\]\s*\{\s*touch-action:pan-x pan-y;/);
   assert.match(css, /\.preview\[data-preview-zoom-active\] \.preview-zoom-stage\s*\{overflow:hidden;/);
