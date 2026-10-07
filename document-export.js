@@ -97,8 +97,8 @@
       };
       close.addEventListener("click",requestClose);
       dialog.addEventListener("cancel",event=>{event.preventDefault();requestClose();});
-      const button=(label,action,parent=actions,primary=false,visibleLabel=label)=>{
-        const el=doc.createElement("button");el.type="button";el.textContent=visibleLabel;if(visibleLabel!==label)el.setAttribute("aria-label",label);if(primary)el.className="export-primary";parent.appendChild(el);
+      const button=(label,action,parent=actions,primary=false)=>{
+        const el=doc.createElement("button");el.type="button";el.textContent=label;if(primary)el.className="export-primary";parent.appendChild(el);
         el.addEventListener("click",async()=>{
           if(working)return;
           working=true;close.disabled=true;progress("保存・共有の操作中です…");
@@ -116,9 +116,9 @@
         catch(error){if(stream&&stream.abort)try{await stream.abort();}catch(_){}throw error;}
       }
       function ready(){
-        const pc=options.isPC(),multiple=files.length>1;
-        const shareAll=!pc&&canShare(files);
-        const directoryAvailable=pc&&multiple&&!!global.showDirectoryPicker;
+        const multiple=files.length>1;
+        const directoryAvailable=multiple&&typeof global.showDirectoryPicker==="function";
+        const shareAll=!directoryAvailable&&canShare(files);
         const labelOf=f=>f.name.endsWith(".pdf")?"PDF":"データ（JSON）";
         if(shareAll)button(multiple?"PDF・データをまとめて共有":labelOf(files[0])+"を共有",async()=>{
           await global.navigator.share({files:files.map(f=>f.file),title:snapshot.name});
@@ -138,19 +138,10 @@
           const filename=doc.createElement("p");filename.className="export-filename";filename.textContent=f.name;
           const row=doc.createElement("div");row.className="export-file-actions";
           group.append(title,filename,row);actions.appendChild(group);
-          const picker=pc&&!!global.showSaveFilePicker;
-          if(picker)button(label+"の保存先を選ぶ",async()=>{
-            const ext=f.name.endsWith(".pdf")?".pdf":".json";
-            const handle=await global.showSaveFilePicker({suggestedName:f.name,types:[{description:label,accept:{[f.blob.type]:[ext]}}]});
-            await write(handle,f.blob);progress(label+"を保存しました。");
-          },row,!multiple&&!shareAll,"保存先を選ぶ");
-          else if(!pc&&canShare([f])&&multiple)button(label+"を共有",async()=>{
-            await global.navigator.share({files:[f.file],title:f.name});progress(label+"を共有先に渡しました。");
-          },row,false,"共有");
           // One genuine user gesture per file: never chain downloads or open popups.
           const link=doc.createElement("a");const url=global.URL.createObjectURL(f.blob);urls.push(url);
           link.href=url;link.download=f.name;link.textContent="ダウンロード";link.setAttribute("aria-label",label+"をダウンロード");
-          if(!picker&&!shareAll&&!directoryAvailable)link.className="export-primary";
+          if(!shareAll&&!directoryAvailable)link.className="export-primary";
           link.addEventListener("click",event=>{
             if(working){event.preventDefault();return;}
             progress(label+"のダウンロードを開始しました。端末でファイルを確認してください。");
@@ -181,7 +172,12 @@
         check();ready();
       }catch(error){
         if(cancelled){cleanup();return;}
-        progress(error.message||"作成に失敗しました。閉じてから再実行してください。");
+        if(files.length){
+          // Keep the frozen JSON recoverable even when PDF rendering fails.
+          heading.textContent="PDF作成に失敗しました";
+          ready();
+          progress("PDFを作成できませんでした。"+(error.message||"")+" データ（JSON）は下から保存できます。PDFは閉じてから再実行してください。");
+        }else progress(error.message||"作成に失敗しました。閉じてから再実行してください。");
       }finally{
         if(snapshot&&snapshot.dispose)snapshot.dispose();
         generating=false;working=false;busy=false;close.disabled=false;close.textContent="閉じる";

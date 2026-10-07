@@ -48,7 +48,6 @@ function setup(version, type, kind, mode) {
     run = () => vm.runInContext(kind === "both" ? "buildOutputPair()" : kind === "json" ? "saveDataOnly()" : type === "report" ? "buildReportPdf()" : "buildPdf()", f.context);
   } else {
     const options = {
-      isPC: () => true,
       capture(outputKind) {
         if (outputKind !== "json") flush();
         return { state: JSON.parse(JSON.stringify(state)), name: "123_計測用", quality: type === "report" ? 0.92 : 0.95,

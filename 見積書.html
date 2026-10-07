@@ -52,9 +52,6 @@ input:focus,select:focus{ outline:2px solid var(--navy2); border-color:var(--nav
 .btn-ghost{ background:#faf3ea; color:var(--navy); border:1px dashed var(--navy2); } .btn-ghost:hover{ background:#f5e9da; }
 .big{ padding:13px; font-size:14px; }
 .actions{ margin-top:16px; display:grid; gap:10px; }
-.split2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
-.devmode{ display:flex; align-items:center; gap:8px; font-size:13px; font-weight:700; margin-bottom:2px; }
-.devmode select{ padding:6px 8px; font-size:14px; border-radius:8px; border:1px solid var(--navy2); background:#fff; }
 .foot{ font-size:10.5px; color:#8a96a4; margin-top:8px; line-height:1.45; }
 .notice{ margin-top:10px; padding:7px 9px; font-size:11.5px; border-radius:6px; background:#fff5e6; border:1px solid #f0c987; color:#8a5a00; }
 .status{ font-size:11px; margin-top:6px; min-height:14px; line-height:1.4; } .status.ok{ color:var(--ok); } .status.err{ color:var(--accent); }
@@ -100,7 +97,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 @media (max-width:900px){ .app{ grid-template-columns:1fr; height:auto; } .preview{ overflow-x:auto; } }
 </style>
 <link rel="stylesheet" href="preview-zoom.css?v=20260930-zoom1">
-<link rel="stylesheet" href="document-export.css?v=20261007-export3">
+<link rel="stylesheet" href="document-export.css?v=20261008-export1">
 </head>
 <body>
 <div class="app">
@@ -236,18 +233,10 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     </section>
 
     <div class="actions document-output">
-      <label class="devmode">利用端末<select id="devMode"><option value="mobile">携帯</option><option value="pc">パソコン</option></select></label>
       <button class="btn big export-primary" id="bothBtn">PDF・データを出力</button>
-      <div class="split2">
-        <button class="btn btn-ghost big" id="pdfBtn">PDFのみ出力</button>
-        <button class="btn btn-ghost big" id="dataBtn">データのみ出力</button>
-      </div>
-      <p class="foot export-help">PDFは閲覧・印刷用、データ（JSON）は再読み込み用です。次の画面で保存方法を選べます。</p>
-      <div class="export-utilities">
-        <button class="btn btn-ghost big" id="printBtn">印刷</button>
-      </div>
+      <p class="foot export-help">PDFとデータ（JSON）を同じ内容で作成します。印刷は保存したPDFを開いて行えます。</p>
     </div>
-    <p class="foot">通常明細の「備考」と、基本料金一覧と同じ横列にある「品名」枠はクリックで直接編集できます。明細の行番号横「×」で行削除。A4・横推奨。</p>
+    <p class="foot">通常明細の「備考」と、基本料金一覧と同じ横列にある「品名」枠はクリックで直接編集できます。明細の行番号横「×」で行削除。</p>
   </aside>
 
   <main class="preview">
@@ -718,7 +707,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 </script>
 <script src="google-drive.js?v=20260930-audit1"></script>
 <script src="preview-zoom.js?v=20260930-zoom1"></script>
-<script src="document-export.js?v=20261007-export3"></script>
+<script src="document-export.js?v=20261008-export1"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -1011,7 +1000,6 @@ async function autoLoadEstimateFromDrive({kocon,isConnected,setStatus,isCurrent=
 function fileBaseName(){ const kocon=($("mKocon").value||"").trim(); const subject=($("subject").value||"件名未入力").trim(); return [...[kocon,subject].filter(Boolean),"見積もり"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
 function flushLivePreview(){ clearTimeout(_livePreviewT); renderSheet(); }
 const outputController=KKMTDocumentExport.create({
-  isPC:()=>IS_PC,
   capture(kind){
     if(kind!=="json")flushLivePreview();
     const state=JSON.parse(JSON.stringify(collectState())),name=fileBaseName();
@@ -1019,20 +1007,7 @@ const outputController=KKMTDocumentExport.create({
     return {...captured,state,name,quality:0.95};
   }
 });
-let IS_PC=false;
-function applyDeviceMode(){ const sel=$("devMode"); if(!sel)return; IS_PC=(sel.value==="pc");
-  const pb=$("printBtn"); if(pb){pb.style.display=IS_PC?"":"none";pb.parentElement.hidden=!IS_PC;}
-  try{ localStorage.setItem("kkmt_devmode", sel.value); }catch(e){} }
 function saveBoth(){ return outputController.start("both"); }
-function savePdfOnly(){ return outputController.start("pdf"); }
-function saveDataOnly(){ return outputController.start("json"); }
-async function doPrint(){ if(driveAutosaveController&&driveAutosaveController.whenIdle)await driveAutosaveController.whenIdle(); flushLivePreview(); const sheet=$("sheet"); if(!sheet)return; fitSheet();
-  sheet.style.zoom=""; const sw=sheet.offsetWidth||1123, sh=sheet.offsetHeight||760;
-  const pxW=(297-12)*96/25.4, pxH=(210-12)*96/25.4; // A4横・余白6mmの印刷可能領域(px概算)
-  let z=Math.min(pxW/sw, pxH/sh, 1); z=Math.max(0.3, z*0.97); // 安全係数で確実に1ページ
-  sheet.style.zoom=String(z);
-  setTimeout(()=>window.print(),150); }
-window.addEventListener("afterprint",()=>{ const s=$("sheet"); if(s)s.style.zoom=""; });
 
 document.addEventListener("DOMContentLoaded",()=>{
   addCustomRow(); addPartRow(); addWdayRow(); addLodgeRow(); refreshLodge();
@@ -1052,8 +1027,7 @@ document.addEventListener("DOMContentLoaded",()=>{
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
   $("tollSearch").addEventListener("click",()=>window.open("https://www.driveplaza.com/dp/SearchTop","_blank"));
   $("addCustom").addEventListener("click",()=>addCustomRow()); $("addPart").addEventListener("click",()=>addPartRow()); $("addWday").addEventListener("click",()=>addWdayRow()); $("addLodge").addEventListener("click",()=>{ addLodgeRow(); refreshLodge(); });
-  $("printBtn").addEventListener("click",doPrint); $("bothBtn").addEventListener("click",saveBoth); $("pdfBtn").addEventListener("click",savePdfOnly); $("dataBtn").addEventListener("click",saveDataOnly);
-  (function initDevMode(){ let saved=null; try{ saved=localStorage.getItem("kkmt_devmode"); }catch(e){} const guess=(navigator.canShare && matchMedia("(pointer:coarse)").matches)?"mobile":"pc"; $("devMode").value=(saved==="pc"||saved==="mobile")?saved:guess; applyDeviceMode(); $("devMode").addEventListener("change",applyDeviceMode); })();
+  $("bothBtn").addEventListener("click",saveBoth);
   syncWE(); syncBase();
   SIMPLE_IDS.forEach(id=>{const el=$(id);if(el)initialFieldValues[id]=el.type==="checkbox"?el.checked:el.value;});
   const restoredDraft=restoreDraft();

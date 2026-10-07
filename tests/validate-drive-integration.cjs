@@ -137,14 +137,22 @@ assert.match(reportApp, /onIdentityChanging:cancelPendingFormUpdates/);
 for (const application of [estimateApp, reportApp]) {
   assert.match(application, /KKMTDocumentExport\.create\(/);
   assert.match(application, /KKMTDocumentExport\.capturePages\(/);
-  for (const kind of ["pdf", "json", "both"]) {
-    assert.ok(application.includes(`outputController.start("${kind}")`));
-  }
+  assert.ok(application.includes('outputController.start("both")'));
+  assert.doesNotMatch(application, /outputController\.start\("(?:pdf|json)"\)|IS_PC|isPC:|devMode|function doPrint\(/,
+    "document output must have one entry and use automatic capability detection");
   const capture = application.slice(application.indexOf("capture(kind){"), application.indexOf("return {...captured,state,name"));
   assert.doesNotMatch(capture, /whenIdle|await/, "capture must freeze JSON, filename and pages synchronously without cloud waits");
   assert.match(capture, /JSON\.parse\(JSON\.stringify\(collectState\(\)\)\)/);
 }
-assert.doesNotMatch(report, /id="saveBtn"|function saveState\(/, "report JSON output must use the shared output controls");
+for (const html of [estimate, report]) {
+  assert.equal(ids(html).filter(id => id === "bothBtn").length, 1);
+  assert.doesNotMatch(html, /id="(?:saveBtn|pdfBtn|dataBtn|printBtn|devMode)"|function saveState\(/,
+    "redundant standalone output controls must be absent");
+  assert.match(html, /印刷は保存したPDFを開いて行えます/);
+  assert.match(html, /document-export\.js\?v=20261008-export1/);
+}
+assert.match(report, /<div class="actions document-utilities">\s*<button[^>]*id="photoBtn"/,
+  "the photo-site action must stay separate from document output");
 assert.match(reportApp, /restoreReportDirectEdits\(\); recalcReport\(\)/);
 assert.match(reportApp, /const firstWorkId=/);
 assert.match(reportApp, /workers","activeWorkers/);

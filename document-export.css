@@ -3,12 +3,7 @@
 .document-output .btn:hover{background:#fff3e3}
 .document-output .export-primary,.document-export .export-primary{background:#f08200;color:#1a1a1a;font-weight:700;border-color:#d46f00}
 .document-output .export-primary:hover,.document-export .export-primary:hover{background:#e67300}
-.document-output .btn-ghost{border-color:#ccc;background:#f4f4f4}
 .document-output .foot{margin:0;color:#555}
-.document-output .devmode{color:#1a1a1a;white-space:nowrap}
-.document-output .devmode select{min-width:0;margin:0}
-.document-output .export-utilities[hidden]{display:none}
-.document-output .export-utilities{display:flex;gap:8px;border-top:1px solid #ddd;padding-top:10px}
 .document-export{box-sizing:border-box;margin:auto;width:min(92vw,480px);max-height:85vh;max-height:85dvh;overflow:auto;padding:20px;border:1px solid #ddd;border-radius:12px;background:#fff;color:#1a1a1a;box-shadow:0 12px 50px #0004;font-size:14px;line-height:1.6}
 .document-export::backdrop{background:#0007}
 .document-export h2{font-size:18px;margin:0 0 10px}
@@ -20,7 +15,7 @@
 .document-export .export-file{min-width:0;padding:12px;border:1px solid #ddd;border-radius:8px}
 .document-export h3{margin:0;font-size:14px}
 .document-export .export-filename{font-size:12px;color:#555;margin:4px 0 10px}
-.document-export .export-file-actions{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,170px),1fr));gap:8px}
+.document-export .export-file-actions{display:grid;gap:8px}
 .document-export>button:last-child{margin-top:16px;border-color:#ccc;background:#f4f4f4}
 .document-export :focus-visible,.document-output :focus-visible{outline:3px solid #1a1a1a;outline-offset:2px}
 @media print{.document-export{display:none!important}}
