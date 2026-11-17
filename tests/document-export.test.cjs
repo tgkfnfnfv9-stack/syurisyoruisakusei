@@ -21,16 +21,16 @@ test("capturePages freezes every page before live form changes and disposes its 
   f.cleanup();
 });
 
-test("JSON-only output does not start PDF generation or await remote autosave", async () => {
+test("JSON-only output does not start PDF generation and downloads once on PC", async () => {
   const f = fixture();
-  f.global.driveAutosaveController = { whenIdle() { throw new Error("remote autosave must not block export"); } };
   let calls = 0;
   const state = { documentType: "estimate", fields: { subject: "保存時の件名", amount: "1234" } };
   const exporter = f.api.create({ capture(kind) { calls++; assert.equal(kind, "json"); return { name: "見積テスト", state, pages: [], dispose() {} }; } });
   await exporter.start("json");
   assert.equal(calls, 1); assert.equal(f.captures.length, 0);
   assert.ok(f.text().includes("JSON") || f.text().includes("データ"));
-  assert.equal(f.downloads.length, 0, "a ready dialog must not launch implicit downloads");
+  assert.equal(f.downloads.length, 1, "PC saves the JSON without a second action");
+  assert.ok(f.downloads[0].name.endsWith(".json"));
   f.cleanup();
 });
 
@@ -64,8 +64,8 @@ for (const kind of ["pdf", "json", "both"]) {
     assert.equal(calls, 1);
     const links = f.document.querySelectorAll("a");
     assert.equal(links.length, kind === "both" ? 2 : 1);
-    for (const link of links) await link.click();
-    assert.equal(f.downloads.length, links.length);
+    assert.equal(f.downloads.length, links.length, "one output action downloads every file on PC");
+    assert.deepEqual(f.downloads.map(d => d.name.split(".").pop()), kind === "both" ? ["pdf", "json"] : [kind]);
     for (const download of f.downloads) {
       assert.ok(download.name.startsWith("123_保存時のお客様"));
       const data = JSON.parse(await download.blob.text());
@@ -88,12 +88,16 @@ for (const kind of ["pdf", "json", "both"]) {
   });
 }
 
-test("share cancellation preserves both files and retries without another PDF generation", async () => {
+const IPHONE = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1";
+
+test("phone: one share action saves both files; cancellation retries without another PDF generation", async () => {
   let attempts = 0, shared;
-  const f = fixture({ navigator: { canShare: () => true, async share(data) { attempts++; shared = data; if (attempts === 1) throw Object.assign(new Error("cancel"), { name: "AbortError" }); } } });
+  const f = fixture({ navigator: { userAgent: IPHONE, canShare: () => true, async share(data) { attempts++; shared = data; if (attempts === 1) throw Object.assign(new Error("cancel"), { name: "AbortError" }); } } });
   const exporter = f.api.create({ capture() { return { name: "共有テスト", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
   await exporter.start("both");
-  const share = f.button("まとめて共有"); assert.ok(share);
+  assert.equal(f.downloads.length, 0, "phones do not fire download popups");
+  assert.match(f.text(), /まとめて保存/);
+  const share = f.button("まとめて保存"); assert.ok(share);
   await share.click(); assert.match(f.text(), /キャンセル/);
   assert.equal(share.disabled, false); assert.equal(f.document.querySelectorAll("a").length, 2);
   await share.click(); assert.equal(attempts, 2); assert.equal(f.captures.length, 1);
@@ -101,41 +105,34 @@ test("share cancellation preserves both files and retries without another PDF ge
   f.cleanup();
 });
 
-test("an unsupported mixed-file share exposes both individual downloads", async () => {
-  const f = fixture({ navigator: { canShare: ({ files }) => files.length === 1 && files[0].type === "application/pdf", share() {} } });
+test("phone: a still-active output tap opens the share sheet with both files immediately", async () => {
+  let shared = null;
+  const f = fixture({ navigator: { userAgent: IPHONE, userActivation: { isActive: true }, canShare: () => true, async share(data) { shared = data; } } });
+  const exporter = f.api.create({ capture() { return { name: "即共有", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
+  await exporter.start("both");
+  assert.deepEqual(Array.from(shared.files, file => file.name), ["即共有.pdf", "即共有.json"]);
+  assert.match(f.document.querySelector("[role=status]").textContent, /両方/);
+  f.cleanup();
+});
+
+test("phone without mixed-file sharing downloads both files automatically", async () => {
+  const f = fixture({ navigator: { userAgent: IPHONE, canShare: ({ files }) => files.length === 1 && files[0].type === "application/pdf", share() {} } });
   const exporter = f.api.create({ capture() { return { name: "非対応端末", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
   await exporter.start("both");
-  assert.equal(f.button("まとめて共有"), undefined);
-  assert.equal(f.buttons().length, 1, "partial sharing must not add redundant per-file actions");
-  assert.equal(f.document.querySelectorAll("a").length, 2);
-  assert.match(f.text(), /両方を個別に保存/);
+  assert.equal(f.button("まとめて保存"), undefined);
+  assert.equal(f.buttons().length, 1, "only the close button remains");
+  assert.equal(f.downloads.length, 2);
+  assert.match(f.text(), /両方をダウンロードしました/);
   f.cleanup();
 });
 
-test("partial directory write failure is explicit and aborts the failed stream", async () => {
-  const f = fixture(); let written = 0, aborted = 0, picks = 0;
-  f.global.showDirectoryPicker = async () => { picks++; return { async getFileHandle() { return { async createWritable() { return { async write() { if (++written === 2) throw new Error("disk full"); }, async close() {}, async abort() { aborted++; } }; } }; } }; };
-  const exporter = f.api.create({ capture() { return { name: "部分保存", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
-  await exporter.start("both"); assert.equal(picks, 0, "picker must wait for a fresh user action after generation");
-  await f.button("同じフォルダー").click();
-  assert.equal(picks, 1); assert.equal(aborted, 1); assert.match(f.text(), /1／2件/);
-  assert.equal(f.document.querySelectorAll("a").length, 2);
-  assert.equal(f.captures.length, 1);
-  f.cleanup();
-});
-
-test("directory cancellation retries the same generated PDF and JSON", async () => {
-  const f = fixture(); let picks = 0; const saved = new Map();
-  f.global.showDirectoryPicker = async () => {
-    if (++picks === 1) throw Object.assign(new Error("cancel"), { name: "AbortError" });
-    return { async getFileHandle(name) { return { async createWritable() { return { async write(blob) { saved.set(name, blob); }, async close() {} }; } }; } };
-  };
-  const exporter = f.api.create({ capture() { return { name: "再試行", state: { fields: { subject: "同一データ" } }, pages: [new f.Element("section")] }; } });
-  await exporter.start("both"); assert.equal(picks, 0);
-  const save = f.button("同じフォルダー"); await save.click(); assert.match(f.text(), /キャンセル/);
-  await save.click(); assert.equal(picks, 2); assert.equal(saved.size, 2);
-  assert.equal(JSON.parse(await saved.get("再試行.json").text()).fields.subject, "同一データ");
-  assert.equal(f.captures.length, 1);
+test("PC with Web Share still downloads both files instead of opening a share sheet", async () => {
+  let shares = 0;
+  const f = fixture({ navigator: { userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0", userActivation: { isActive: true }, canShare: () => true, async share() { shares++; } } });
+  const exporter = f.api.create({ capture() { return { name: "PC", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
+  await exporter.start("both");
+  assert.equal(shares, 0); assert.equal(f.downloads.length, 2);
+  assert.deepEqual(f.downloads.map(d => d.name), ["PC.pdf", "PC.json"]);
   f.cleanup();
 });
 
@@ -241,45 +238,38 @@ test("PDF snapshot preserves standards doctype and report continuation CSS ances
   f.cleanup();
 });
 
-test("ready instructions match available actions and each download stays with its filename", async () => {
-  for (const mode of ["download", "directory", "share", "both"]) {
-    const f = fixture({ navigator: ["share", "both"].includes(mode) ? { canShare: () => true, share: async () => {} } : {} });
-    if (["directory", "both"].includes(mode)) f.global.showDirectoryPicker = async () => {};
-    const exporter = f.api.create({ capture: () => ({ name: "同じ書類", state: {}, pages: [new f.Element("section")] }) });
-    await exporter.start("both");
-    assert.equal(f.buttons().length, mode === "download" ? 1 : 2, "only close plus one supported bulk action");
-    assert.doesNotMatch(f.text(), /保存先を選ぶ/);
-    const groups = f.document.querySelectorAll(".export-file");
-    assert.equal(groups.length, 2);
-    groups.forEach((group, i) => {
-      const link = group.querySelector("a");
-      assert.equal(link.download, "同じ書類" + (i ? ".json" : ".pdf"));
-      assert.equal(group.querySelector(".export-filename").textContent, link.download);
-      assert.match(link.textContent, /ダウンロード/);
-    });
-    const status = f.document.querySelector("[role=status]").textContent;
-    if (mode === "download") { assert.doesNotMatch(status, /共有|フォルダー/); assert.match(status, /両方を個別に保存/); }
-    if (["directory", "both"].includes(mode)) { assert.match(status, /フォルダー/); assert.doesNotMatch(status, /共有/); }
-    if (mode === "share") assert.match(status, /まとめて共有/);
-    f.cleanup();
-  }
-});
-
-test("Escape during native saving does not leave a false cancellation state or discard files", async () => {
-  const wait = deferred(), f = fixture();
-  f.global.showDirectoryPicker = () => wait.promise;
-  const exporter = f.api.create({ capture: () => ({ name: "保存中", state: {}, pages: [new f.Element("section")] }) });
+test("each file stays with its filename and closing during sharing is blocked", async () => {
+  const wait = deferred();
+  const f = fixture({ navigator: { userAgent: IPHONE, canShare: () => true, share: () => wait.promise } });
+  const exporter = f.api.create({ capture: () => ({ name: "同じ書類", state: {}, pages: [new f.Element("section")] }) });
   await exporter.start("both");
-  const pending = f.button("同じフォルダー").click();
+  const groups = f.document.querySelectorAll(".export-file");
+  assert.equal(groups.length, 2);
+  groups.forEach((group, i) => {
+    const link = group.querySelector("a");
+    assert.equal(link.download, "同じ書類" + (i ? ".json" : ".pdf"));
+    assert.equal(group.querySelector(".export-filename").textContent, link.download);
+    assert.match(link.textContent, /ダウンロード/);
+  });
+  const pending = f.button("まとめて保存").click();
   await f.document.querySelector("dialog").emit("cancel");
   assert.doesNotMatch(f.document.querySelector("[role=status]").textContent, /中止/);
-  assert.equal(f.document.querySelectorAll("a").length, 2);
+  assert.equal(f.document.querySelectorAll("dialog").length, 1);
   wait.reject(Object.assign(new Error("cancel"), { name: "AbortError" }));
   await pending;
   assert.match(f.document.querySelector("[role=status]").textContent, /再試行/);
   await f.button("閉じる").click();
   assert.equal(f.document.querySelectorAll("dialog").length, 0);
-  await exporter.start("both");
-  assert.equal(f.document.querySelectorAll("a").length, 2);
+  f.cleanup();
+});
+
+test("device detection treats phones and iPads as mobile and desktops as PC", () => {
+  const f = fixture();
+  const check = navigator => { f.global.navigator = navigator; return f.api.isMobile(); };
+  assert.equal(check({ userAgent: IPHONE }), true);
+  assert.equal(check({ userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 8) Chrome/130.0 Mobile Safari/537.36" }), true);
+  assert.equal(check({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15", maxTouchPoints: 5 }), true);
+  assert.equal(check({ userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Safari/605.1.15", maxTouchPoints: 0 }), false);
+  assert.equal(check({ userAgent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0" }), false);
   f.cleanup();
 });

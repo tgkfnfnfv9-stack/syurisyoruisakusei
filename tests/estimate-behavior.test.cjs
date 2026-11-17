@@ -16,7 +16,7 @@ function definition(name) {
 function harness() {
   const fields = new Map();
   const lists = new Map(["partsList", "customList", "wdList", "lodgeList"].map(id => [id, []]));
-  let renderCount = 0, dirtyCount = 0, previewCount = 0, autosaveCount = 0;
+  let renderCount = 0, previewCount = 0, autosaveCount = 0;
   function input(value = "", type = "text") {
     let text = String(value);
     const listeners = {};
@@ -80,9 +80,8 @@ function harness() {
   ];
   const preface = html.slice(html.indexOf("const P="), html.indexOf("function invalidateRouteRequests"));
   vm.runInContext(preface + "\n" + names.map(definition).join("\n"), context);
-  vm.runInContext("driveAutosaveController={markDirty:()=>recordDirty()};", Object.assign(context, { recordDirty() { dirtyCount++; } }));
   $("apiKey").value = "test-key"; $("address").value = "旧住所"; $("mKocon").value = "JOB-A";
-  return { context, $, lists, counts: () => ({ renderCount, dirtyCount, previewCount, autosaveCount }) };
+  return { context, $, lists, counts: () => ({ renderCount, previewCount, autosaveCount }) };
 }
 
 async function main() {
@@ -161,7 +160,7 @@ async function main() {
   assert.equal(h.$("b1_km").value, "100.0");
   assert.equal(h.$("b1_h").value, "2.0");
   assert.equal(h.$("b1_toll").value, "1200");
-  assert.equal(h.counts().dirtyCount, 1, "accepted response requests autosave once");
+  assert.equal(h.counts().autosaveCount, 1, "accepted response requests autosave once");
 
   const old = deferredRoute(); c.cancelPendingFormUpdates();
   const newer = deferredRoute();

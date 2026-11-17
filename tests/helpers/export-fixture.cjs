@@ -3,7 +3,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 // Execute the production export controller with browser APIs at the boundary.
-// No Drive connection, file writes, or external browser dependency is needed.
+// No file writes or external browser dependency is needed.
 function fixture(options = {}) {
   const downloads = [], revoked = [], objectURLs = new Map(), captures = [];
   const timers = new Set();
