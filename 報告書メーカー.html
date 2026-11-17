@@ -937,7 +937,9 @@ function directData(){ const c=$("directUse"); if(!c||!c.checked) return null; c
   const pick=(id,def)=>{ const el=$(id); return (el&&el.value.trim()!=="")?Math.max(0,parseNum(el.value)):def; };
   return { km:a.km,h:a.h,rate:a.rate,trans:pick("d_trans",a.trans),trav:pick("d_trav",a.trav),ktoll:pick("d_ktoll",a.ktoll) }; }
 function refreshDirect(){ const on=$("directUse")&&$("directUse").checked; if($("directBox"))$("directBox").style.display=on?"block":"none";
-  ["d_trans","d_trav","d_ktoll"].forEach(id=>{ const el=$(id); if(el)el.dataset.edited=(el.value.trim()!=="")?"1":""; }); }
+  // A restored value only counts as hand-edited when it differs from the automatic amount.
+  const a=directAuto(),auto={d_trans:a.trans,d_trav:a.trav,d_ktoll:a.ktoll};
+  ["d_trans","d_trav","d_ktoll"].forEach(id=>{ const el=$(id); if(!el)return; const v=el.value.trim(); el.dataset.edited=(v!==""&&Math.max(0,parseNum(v))!==auto[id])?"1":""; }); }
 function computeItems(){
   const bases=[baseData("b1"),baseData("b2"),baseData("b3")].filter(b=>b.use);
   const both=bases.length>1;
@@ -1125,6 +1127,8 @@ function importEstimate(raw,silent){ let s; try{s=validateImportedEstimate(raw);
     mk(f.wkdPeople,f.daysWd,f.hoursWd,f.nightWd,false); mk(f.wkePeople,f.daysWe,f.hoursWe,f.nightWe,true); }
   applyState({ documentType:"report",schemaVersion:2,fields:f,parts:s.parts||[],customs:s.customs||[],lodges:s.lodges||lodgesFromState(s),work,workers:WORKERS,activeWorkers:ACTIVE });
   if(!silent)alert("見積データを取り込みました。§8の作業者名は未設定なので、必要に応じて選んでください。作業費は報告書の料金基準（1日8時間超）で再計算します。");
+  const removed=Array.isArray(s.excludedItemKeys)?s.excludedItemKeys.length:0;
+  if(removed)alert(`見積書のプレビューで削除した行が${removed}件あります。削除した行は報告書に自動では反映されないため、§2〜§6の金額を見積書と見比べて確認してください。`);
   return true; }
 
 /* ===== 報告書 追加ロジック ===== */
@@ -1365,7 +1369,7 @@ function makePad(cv,onEnd,onImageError){ const ctx=cv.getContext("2d");let image
   cv.addEventListener("pointerdown",e=>{cancelLoading();drawing=true;[lx,ly]=pos(e);cv.setPointerCapture(e.pointerId);});
   cv.addEventListener("pointermove",e=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(p[0],p[1]);ctx.stroke();lx=p[0];ly=p[1];});
   const end=()=>{if(drawing){drawing=false;if(onEnd)onEnd();}};["pointerup","pointerleave","pointercancel","lostpointercapture"].forEach(event=>cv.addEventListener(event,end));
-  return {ctx,resize,clear,whenReady:async()=>{let pending,result;do{pending=ready;result=await pending;}while(pending!==ready);return result&&!drawing;},draw:d=>{resize();if(d){ready=new Promise(resolve=>{resolveLoading=resolve;});const generation=imageGeneration,image=new Image(),fail=()=>{if(generation!==imageGeneration)return;imageGeneration++;drawing=false;ctx.clearRect(0,0,cv.width,cv.height);if(resolveLoading)resolveLoading(false);resolveLoading=null;ready=Promise.resolve(false);if(onImageError)onImageError();};image.onload=()=>{if(generation!==imageGeneration)return;try{ctx.drawImage(image,0,0,cv.width,cv.height);if(resolveLoading)resolveLoading(true);resolveLoading=null;}catch(_){fail();}};image.onerror=fail;image.src=d;}}};
+  return {ctx,resize,clear,whenReady:async()=>{let pending,result;do{pending=ready;result=await pending;}while(pending!==ready);return result&&!drawing;},draw:d=>{resize();if(d){ready=new Promise(resolve=>{resolveLoading=resolve;});const generation=imageGeneration,image=new Image(),fail=()=>{if(generation!==imageGeneration)return;imageGeneration++;drawing=false;ctx.clearRect(0,0,cv.width,cv.height);if(resolveLoading)resolveLoading(false);resolveLoading=null;ready=Promise.resolve(false);if(onImageError)onImageError();};image.onload=()=>{if(generation!==imageGeneration)return;try{const iw=image.naturalWidth||image.width||cv.width,ih=image.naturalHeight||image.height||cv.height,scale=Math.min(cv.width/iw,cv.height/ih),dw=iw*scale,dh=ih*scale;ctx.drawImage(image,(cv.width-dw)/2,(cv.height-dh)/2,dw,dh);if(resolveLoading)resolveLoading(true);resolveLoading=null;}catch(_){fail();}};image.onerror=fail;image.src=d;}}};
 }
 let mainPad=null, ssPad=null, ssDraftSignature="";
 function updateSigState(){ const el=$("sigState"); if(el)el.textContent=_signaturePending?"サイン画像を確認中…":sigDataURL?"✅ サイン取得済み（サイン画面で修正できます）":"— サイン未取得"; }
