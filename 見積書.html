@@ -93,7 +93,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 @media (max-width:900px){ .app{ grid-template-columns:1fr; height:auto; } .preview{ overflow-x:auto; } }
 </style>
 <link rel="stylesheet" href="preview-zoom.css?v=20260930-zoom1">
-<link rel="stylesheet" href="document-export.css?v=20261008-export1">
+<link rel="stylesheet" href="document-export.css?v=20261117-export3">
 </head>
 <body>
 <div class="app">
@@ -104,7 +104,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     </div>
     <h1>御見積書メーカー</h1>
     <p class="sub">株式会社 小林機械 / EAST JAPAN MACHINE PLAZA</p>
-    <div class="io"><button id="loadBtn">📂 読み込み</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"></div>
+    <div class="io"><button id="loadBtn">📂 読み込み</button><button id="aiBtn">🤖 AI取込</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"></div>
 
     <section class="card doc-card">
       <h2>高コン／見積もり番号</h2>
@@ -692,6 +692,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
 </script>
 <script src="local-data.js?v=20261117-local1"></script>
+<script src="ai-import.js?v=20261117-ai2"></script>
 <script src="preview-zoom.js?v=20261117-zoom2"></script>
 <script src="document-export.js?v=20261117-export2"></script>
 <script>
@@ -999,6 +1000,16 @@ document.addEventListener("DOMContentLoaded",()=>{
     restoreState:applyState,
     beforeLoad:cancelPendingFormUpdates,
     afterLoad:writeLocalDraftNow
+  });
+  /* AI取込：AIが作成した見積書JSON（保存データと同じ形式）を貼り付けて反映する。形式の説明は AI_SCHEMA.md */
+  KKMTAiImport.create({
+    button:$("aiBtn"), title:"AI取込（見積書）",
+    hasInput:()=>{ try{ return !!localStorage.getItem(DRAFT_KEY); }catch(_){ return false; } },
+    note:"AIが作成した見積書のJSONを貼り付けてください。現在の入力は貼り付けた内容に置き換わります。金額はツールが自動計算します。",
+    placeholder:'{"documentType":"estimate","fields":{"subject":"…"},"wdays":[…]}',
+    promptText:"御見積書を作ります。次のルールでデータ（JSON）を作り、最後の「返し方」のとおり返してください。\n形式の説明: https://github.com/tgkfnfnfv9-stack/syurisyoruisakusei/blob/main/AI_SCHEMA.md\n・金額（交通費・移動費・作業費・部品売価・税・合計）は計算しない。距離・時間・人数・回数・作業時間・部品の原価だけ入れる\n・分からない項目は省略。日付はYYYY-MM-DD、数値は数字の文字列\n・形式: {\"documentType\":\"estimate\",\"fields\":{\"mKocon\":高コン番号,\"subject\":件名,\"client\":相手の会社名,\"workDate\":作業日,\"address\":作業場所の住所,\"b1_use\":本社(館林)から出発ならtrue,\"b1_km\":片道km,\"b1_h\":片道時間h,\"b1_toll\":片道高速代(税込),\"b1_people\":人数,\"b1_tripsWd\":平日の往復回数,\"b1_tripsWe\":土日祝の往復回数(本庄(児玉)発はb2_〜)},\"wdays\":[{\"people\":人数,\"hours\":17:30までの作業時間,\"night\":17:30以降の時間,\"holiday\":土日祝ならtrue}],\"parts\":[{\"name\":部品名,\"cost\":原価,\"qty\":数量}],\"customs\":[{\"name\":その他費用名,\"amt\":税抜金額,\"qty\":数量}],\"lodges\":[{\"memo\":日付メモ,\"people\":人数,\"nights\":泊数,\"holiday\":土日祝ならtrue}]}\n【返し方】\n①リンク：JSONを改行なしの1行にし、JavaScriptのencodeURIComponentで変換して https://tgkfnfnfv9-stack.github.io/syurisyoruisakusei/%E8%A6%8B%E7%A9%8D%E6%9B%B8.html#ai= の後ろに付けたURL。コード実行（Python等）が使えるなら必ずコードで作成（Pythonなら urllib.parse.quote(json.dumps(data,ensure_ascii=False,separators=(',',':')),safe='')）。コード実行が使えない場合はリンクは省略\n②同じJSONを```jsonのコードブロックで\n内容：",
+    apply:data=>{ if(!data.documentType)data.documentType="estimate"; if(!data.fields||typeof data.fields!=="object")data.fields={};
+      return localLoader.loadDocument({ load:async()=>validateEstimateState(data), apply:applyState, message:"AIデータを読み込みました。内容と金額を確認してください。" }); }
   });
   const _app=document.querySelector(".app");
   _app.addEventListener("input",autosaveFromEvent); _app.addEventListener("change",autosaveFromEvent);

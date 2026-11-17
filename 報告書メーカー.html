@@ -152,7 +152,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 .ss-actions .ok{ background:var(--ok); color:#fff; } .ss-actions .cancel{ background:#e9edf2; color:#333; }
 </style>
 <link rel="stylesheet" href="preview-zoom.css?v=20260930-zoom1">
-<link rel="stylesheet" href="document-export.css?v=20261008-export1">
+<link rel="stylesheet" href="document-export.css?v=20261117-export3">
 </head>
 <body>
 <div class="app">
@@ -163,7 +163,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     </div>
     <h1>作業報告書メーカー</h1>
     <p class="sub">株式会社 小林機械 / EAST JAPAN MACHINE PLAZA</p>
-    <div class="io"><button id="loadBtn">📂 読み込み</button><button id="estBtn">📥 見積取込</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"><input id="estFile" type="file" accept="application/json,.json" class="hidden"></div>
+    <div class="io"><button id="loadBtn">📂 読み込み</button><button id="estBtn">📥 見積取込</button><button id="aiBtn">🤖 AI取込</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"><input id="estFile" type="file" accept="application/json,.json" class="hidden"></div>
 
     <section class="card doc-card">
       <h2>高コン／見積もり番号</h2>
@@ -831,6 +831,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 
 </script>
 <script src="local-data.js?v=20261117-local1"></script>
+<script src="ai-import.js?v=20261117-ai2"></script>
 <script src="preview-zoom.js?v=20261117-zoom2"></script>
 <script src="document-export.js?v=20261117-export2"></script>
 <script>
@@ -1488,6 +1489,19 @@ document.addEventListener("DOMContentLoaded",()=>{
     restoreState:applyState,
     beforeLoad:cancelPendingFormUpdates,
     afterLoad:writeLocalDraftNow
+  });
+  /* AI取込：AIが作成した報告書JSON（保存データと同じ形式）を貼り付けて反映する。見積書JSONなら見積取込と同じく変換。形式の説明は AI_SCHEMA.md */
+  KKMTAiImport.create({
+    button:$("aiBtn"), title:"AI取込（報告書）",
+    hasInput:()=>{ try{ return !!localStorage.getItem(DRAFT_KEY); }catch(_){ return false; } },
+    note:"AIが作成した報告書のJSONを貼り付けてください（見積書のJSONも取り込めます）。現在の入力は貼り付けた内容に置き換わります。金額はツールが自動計算します。サインは取り込んだ後に記入してください。",
+    placeholder:'{"documentType":"report","fields":{"subject":"…"},"work":[…]}',
+    promptText:"作業報告書を作ります。次のルールでデータ（JSON）を作り、最後の「返し方」のとおり返してください。\n形式の説明: https://github.com/tgkfnfnfv9-stack/syurisyoruisakusei/blob/main/AI_SCHEMA.md\n・金額（作業費・交通費・移動費・部品売価・税・合計）は計算しない。作業者ごとの時間・距離・人数・回数・部品の原価だけ入れる\n・分からない項目は省略。日付はYYYY-MM-DD、時刻はHH:MM、数値は数字の文字列。サインは入れない\n・形式: {\"documentType\":\"report\",\"fields\":{\"mKocon\":高コン番号,\"subject\":件名,\"billName\":請求先会社名,\"billAddr\":請求先住所,\"billTel\":電話,\"billPerson\":担当者様名,\"sameAsSite\":作業場所が請求先と同じならtrue,\"siteName\":作業場所の会社名,\"address\":作業場所住所,\"b1_use\":本社(館林)から出発ならtrue,\"b1_km\":片道km,\"b1_h\":片道時間h,\"b1_toll\":片道高速代(税込),\"b1_people\":人数,\"b1_tripsWd\":平日の往復回数,\"b1_tripsWe\":土日祝の往復回数,\"mMaker\":機械メーカー,\"mType\":機種,\"mNo\":機械番号,\"mYear\":年式,\"repDate\":提出日,\"trouble\":不具合内容,\"cause\":原因,\"action\":処置,\"doneComplete\":完了ならtrue,\"doneIncomplete\":未完了ならtrue},\"work\":[{\"date\":作業日,\"content\":作業内容,\"start\":開始,\"end\":終了,\"holiday\":祝日ならtrue,\"people\":[{\"worker\":作業者名,\"hours\":時間}]}],\"parts\":[{\"name\":部品名,\"cost\":原価,\"qty\":数量}],\"customs\":[{\"name\":その他費用名,\"amt\":税抜金額,\"qty\":数量}],\"lodges\":[{\"memo\":日付メモ,\"people\":人数,\"nights\":泊数,\"holiday\":土日祝ならtrue}]}\n【返し方】\n①リンク：JSONを改行なしの1行にし、JavaScriptのencodeURIComponentで変換して https://tgkfnfnfv9-stack.github.io/syurisyoruisakusei/%E5%A0%B1%E5%91%8A%E6%9B%B8%E3%83%A1%E3%83%BC%E3%82%AB%E3%83%BC.html#ai= の後ろに付けたURL。コード実行（Python等）が使えるなら必ずコードで作成（Pythonなら urllib.parse.quote(json.dumps(data,ensure_ascii=False,separators=(',',':')),safe='')）。コード実行が使えない場合はリンクは省略\n②同じJSONを```jsonのコードブロックで\n内容：",
+    apply:data=>{
+      if(data.documentType==="estimate")return localLoader.loadDocument({ load:async()=>validateImportedEstimate(data),
+        apply:d=>{if(!importEstimate(d,true))throw new Error("見積書を取り込めませんでした。");}, message:"AIの見積データを報告書へ取り込みました。§8の作業者と金額を確認してください。" });
+      if(!data.documentType)data.documentType="report"; if(!data.fields||typeof data.fields!=="object")data.fields={}; if(!Array.isArray(data.work))data.work=[];
+      return localLoader.loadDocument({ load:async()=>validateReportState(data), apply:applyState, message:"AIデータを読み込みました。内容と金額を確認し、サインを記入してください。" }); }
   });
   const _app=document.querySelector(".app");
   _app.addEventListener("input",autosaveFromEvent); _app.addEventListener("change",autosaveFromEvent);
