@@ -3,6 +3,12 @@
   const doc=global.document;
   const abortError=()=>Object.assign(new Error("出力を中止しました。"),{name:"AbortError"});
   const file=(blob,name)=>({blob,name,file:new File([blob],name,{type:blob.type})});
+  function isMobile(){
+    const nav=global.navigator||{},ua=nav.userAgent||"";
+    if(nav.userAgentData&&nav.userAgentData.mobile===true)return true;
+    if(/iPhone|iPad|iPod|Android|Mobile/i.test(ua))return true;
+    return /Macintosh/.test(ua)&&nav.maxTouchPoints>1; // iPad in desktop mode
+  }
 
   // Keep IDs/styles but isolate the snapshot from live form selectors and updates.
   // No preview ancestors means screen zoom never changes the PDF dimensions.
@@ -99,7 +105,7 @@
       dialog.addEventListener("cancel",event=>{event.preventDefault();requestClose();});
       const button=(label,action,parent=actions,primary=false)=>{
         const el=doc.createElement("button");el.type="button";el.textContent=label;if(primary)el.className="export-primary";parent.appendChild(el);
-        el.addEventListener("click",async()=>{
+        el.run=async()=>{
           if(working)return;
           working=true;close.disabled=true;progress("保存・共有の操作中です…");
           const controls=Array.from(actions.querySelectorAll("button,a"));
@@ -107,29 +113,22 @@
           try{await action();}
           catch(error){progress(error.name==="AbortError"?"キャンセルしました。作成済みファイルから再試行できます。":"保存・共有に失敗しました。下の個別保存から再試行してください。");}
           finally{working=false;close.disabled=false;controls.forEach(node=>{node.disabled=false;node.removeAttribute("aria-disabled");});}
-        });return el;
+        };
+        el.addEventListener("click",el.run);return el;
       };
       const canShare=list=>{try{return !!(global.navigator.share&&global.navigator.canShare&&global.navigator.canShare({files:list.map(f=>f.file)}));}catch(_){return false;}};
-      async function write(handle,blob){
-        let stream;
-        try{stream=await handle.createWritable();await stream.write(blob);await stream.close();}
-        catch(error){if(stream&&stream.abort)try{await stream.abort();}catch(_){}throw error;}
-      }
-      function ready(){
+      const labelOf=f=>f.name.endsWith(".pdf")?"PDF":"データ（JSON）";
+      let autoSaving=false;
+      function ready(complete){
         const multiple=files.length>1;
-        const directoryAvailable=multiple&&typeof global.showDirectoryPicker==="function";
-        const shareAll=!directoryAvailable&&canShare(files);
-        const labelOf=f=>f.name.endsWith(".pdf")?"PDF":"データ（JSON）";
-        if(shareAll)button(multiple?"PDF・データをまとめて共有":labelOf(files[0])+"を共有",async()=>{
+        // Phones save through the share sheet (「ファイルに保存」 keeps both files together).
+        // PCs download straight into the downloads folder with no extra step.
+        const shareAll=isMobile()&&canShare(files);
+        const links=[];
+        let share=null;
+        if(shareAll)share=button(multiple?"PDF・データをまとめて保存":labelOf(files[0])+"を保存",async()=>{
           await global.navigator.share({files:files.map(f=>f.file),title:snapshot.name});
-          progress("共有先に渡しました。共有先でファイルを確認してください。");
-        },actions,true);
-        if(directoryAvailable)button("同じフォルダーに両方保存",async()=>{
-          const directory=await global.showDirectoryPicker({mode:"readwrite"});
-          let saved=0;
-          try{for(const f of files){await write(await directory.getFileHandle(f.name,{create:true}),f.blob);saved++;}}
-          catch(error){progress(`${saved}／${files.length}件を保存しました。保存できなかったファイルは下から個別に保存してください。`);return;}
-          progress("PDF・データの両方を保存しました。");
+          progress(multiple?"共有メニューに両方のファイルを渡しました。「ファイルに保存」などで保存先を確認してください。":"共有メニューに渡しました。保存先でファイルを確認してください。");
         },actions,true);
         for(const f of files){
           const label=labelOf(f);
@@ -138,21 +137,35 @@
           const filename=doc.createElement("p");filename.className="export-filename";filename.textContent=f.name;
           const row=doc.createElement("div");row.className="export-file-actions";
           group.append(title,filename,row);actions.appendChild(group);
-          // One genuine user gesture per file: never chain downloads or open popups.
           const link=doc.createElement("a");const url=global.URL.createObjectURL(f.blob);urls.push(url);
-          link.href=url;link.download=f.name;link.textContent="ダウンロード";link.setAttribute("aria-label",label+"をダウンロード");
-          if(!shareAll&&!directoryAvailable)link.className="export-primary";
+          link.href=url;link.download=f.name;link.textContent=shareAll?"ダウンロード":"もう一度ダウンロード";link.setAttribute("aria-label",label+"をダウンロード");
           link.addEventListener("click",event=>{
+            if(autoSaving)return;
             if(working){event.preventDefault();return;}
             progress(label+"のダウンロードを開始しました。端末でファイルを確認してください。");
-          });row.appendChild(link);
+          });row.appendChild(link);links.push(link);
         }
+        if(!complete)return;
+        if(shareAll){
+          progress(multiple?"準備ができました。「PDF・データをまとめて保存」を押すと、両方を一度に保存できます。":"準備ができました。下のボタンから保存してください。");
+          // When the original tap is still active the share sheet opens without a second tap.
+          const activation=global.navigator.userActivation;
+          if(activation&&activation.isActive)return share.run();
+          return;
+        }
+        return autoDownload(links,multiple);
+      }
+      async function autoDownload(links,multiple){
+        working=true;close.disabled=true;autoSaving=true;
+        try{
+          for(let i=0;i<links.length;i++){
+            if(i)await new Promise(resolve=>global.setTimeout(resolve,400));
+            links[i].click();
+          }
+        }finally{autoSaving=false;working=false;close.disabled=false;}
         progress(multiple
-          ?(shareAll?"準備ができました。まとめて共有するか、両方を個別に保存してください。"
-            :directoryAvailable?"準備ができました。同じフォルダーに両方保存するか、個別に保存してください。"
-            :"準備ができました。PDFとデータの両方を個別に保存してください。")
-          :shareAll?"準備ができました。共有またはダウンロードしてください。"
-          :"準備ができました。下から保存してください。");
+          ?"PDF・データの両方をダウンロードしました。ダウンロードフォルダーを確認してください。「複数ファイルのダウンロード」の確認が出た場合は「許可」を押してください。"
+          :"ダウンロードしました。ダウンロードフォルダーを確認してください。");
       }
       try{
         // Blur commits contenteditable/input changes before the atomic capture.
@@ -169,13 +182,13 @@
         snapshot.state=JSON.parse(JSON.stringify(snapshot.state));
         if(kind!=="pdf")files.push(file(new Blob([JSON.stringify(snapshot.state,null,2)],{type:"application/json"}),snapshot.name+".json"));
         if(kind!=="json")files.unshift(await buildPdf(snapshot,progress,check));
-        check();ready();
+        check();generating=false;working=false;close.textContent="閉じる";await ready(true);
       }catch(error){
         if(cancelled){cleanup();return;}
         if(files.length){
           // Keep the frozen JSON recoverable even when PDF rendering fails.
           heading.textContent="PDF作成に失敗しました";
-          ready();
+          ready(false);
           progress("PDFを作成できませんでした。"+(error.message||"")+" データ（JSON）は下から保存できます。PDFは閉じてから再実行してください。");
         }else progress(error.message||"作成に失敗しました。閉じてから再実行してください。");
       }finally{
@@ -185,5 +198,5 @@
     }
     return {start};
   }
-  global.KKMTDocumentExport={create,capturePages,buildPdf};
+  global.KKMTDocumentExport={create,capturePages,buildPdf,isMobile};
 })(window);

@@ -55,13 +55,9 @@ input:focus,select:focus{ outline:2px solid var(--navy2); border-color:var(--nav
 .foot{ font-size:10.5px; color:#8a96a4; margin-top:8px; line-height:1.45; }
 .notice{ margin-top:10px; padding:7px 9px; font-size:11.5px; border-radius:6px; background:#fff5e6; border:1px solid #f0c987; color:#8a5a00; }
 .status{ font-size:11px; margin-top:6px; min-height:14px; line-height:1.4; } .status.ok{ color:var(--ok); } .status.err{ color:var(--accent); }
-.drive-status{ font-size:11px; margin-top:8px; min-height:16px; line-height:1.45; color:#5f6b7a; }
-.drive-status.ok{ color:var(--ok); } .drive-status.err{ color:var(--accent); }
-.drive-card button:disabled{ opacity:.55; cursor:wait; }
-.drive-search{ margin-top:10px; padding-top:10px; border-top:1px solid var(--line); }
-.drive-search-modes{ display:flex; gap:16px; flex-wrap:wrap; margin:8px 0; }
-.drive-search-modes label{ display:flex; align-items:center; gap:6px; margin:0; font-weight:700; }
-.drive-search-modes input{ width:auto; margin:0; }
+.doc-status:empty{ display:none; }
+.doc-status{ font-size:11px; margin-top:8px; min-height:16px; line-height:1.45; color:#5f6b7a; }
+.doc-status.ok{ color:var(--ok); } .doc-status.err{ color:var(--accent); }
 .hidden{ display:none; } .we-wrap{ display:none; } .we-head{ color:#b8860b; }
 details{ margin-top:10px; font-size:11.5px; } details summary{ cursor:pointer; color:var(--navy2); font-weight:700; }
 details .help{ margin-top:6px; line-height:1.6; color:#4a5663; } details .help a{ color:var(--google); }
@@ -169,22 +165,11 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <p class="sub">株式会社 小林機械 / EAST JAPAN MACHINE PLAZA</p>
     <div class="io"><button id="loadBtn">📂 読み込み</button><button id="estBtn">📥 見積取込</button><input id="loadFile" type="file" accept="application/json,.json" class="hidden"><input id="estFile" type="file" accept="application/json,.json" class="hidden"></div>
 
-    <section class="card drive-card">
-      <h2>高コン／見積もり番号・共通Drive</h2>
+    <section class="card doc-card">
+      <h2>高コン／見積もり番号</h2>
       <label>高コン<input id="mKocon" type="text" autocomplete="off" placeholder="例）12345"></label>
       <label>件名<input id="subject" type="text" placeholder="例）研磨機 クラッチ取り外し"></label>
-      <button type="button" class="btn btn-google" id="driveConnectBtn" style="margin-top:10px;" disabled>共通Driveに接続</button>
-      <div class="drive-search">
-        <p class="foot" style="margin-top:0;"><b>検索方法</b></p>
-        <div class="drive-search-modes">
-          <label><input type="radio" name="reportDriveSearchMode" id="driveSearchModeKocon" value="kocon" checked>高コン番号</label>
-          <label><input type="radio" name="reportDriveSearchMode" id="driveSearchModeSubject" value="subject">件名</label>
-        </div>
-        <button type="button" class="btn btn-google" id="driveSearchReportBtn">報告書を検索</button>
-        <p class="foot">高コン番号・件名は上の入力欄を使用します。</p>
-      </div>
-      <button type="button" class="btn btn-google" id="driveImportEstimateBtn" style="margin-top:8px;">Driveから見積書を取り込む</button>
-      <p class="drive-status" id="driveStatus" role="status" aria-live="polite">共通Driveへ接続中…</p>
+      <p class="doc-status" id="docStatus" role="status" aria-live="polite"></p>
     </section>
 
     <section class="card">
@@ -351,7 +336,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
     <textarea id="textareaMeasure" style="display:none"></textarea>
     <div class="actions document-output">
       <button class="btn big export-primary" id="bothBtn">PDF・データを出力</button>
-      <p class="foot export-help">PDFとデータ（JSON）を同じ内容で作成します。印刷は保存したPDFを開いて行えます。</p>
+      <p class="foot export-help">1回押すだけでPDFとデータ（JSON）の両方を同じ内容で保存します（パソコンは自動ダウンロード、携帯は共有メニューからまとめて保存）。印刷は保存したPDFを開いて行えます。</p>
     </div>
     <div class="actions document-utilities">
       <button class="btn btn-ghost" id="photoBtn">写真添付（社内サイト）</button>
@@ -359,7 +344,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
   </aside>
 
   <main class="preview">
-    <div class="preview-zoom-tools"><span>ホイール / 2本指で拡大・縮小</span><output data-preview-zoom-status aria-label="プレビューの表示倍率">100%</output></div>
+    <div class="preview-zoom-tools"><span>Ctrl＋ホイール / 2本指で拡大・縮小</span><output data-preview-zoom-status aria-label="プレビューの表示倍率">100%</output></div>
     <div class="preview-zoom-stage"><div class="preview-zoom-content">
     <div id="sheet" class="sheet"><div class="empty">左の入力内容が<br>ここに自動反映されます</div></div>
     <div id="sheetExtra"></div>
@@ -845,9 +830,9 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 //# sourceMappingURL=jspdf.umd.min.js.map
 
 </script>
-<script src="google-drive.js?v=20260930-audit1"></script>
-<script src="preview-zoom.js?v=20260930-zoom1"></script>
-<script src="document-export.js?v=20261008-export1"></script>
+<script src="local-data.js?v=20261117-local1"></script>
+<script src="preview-zoom.js?v=20261117-zoom2"></script>
+<script src="document-export.js?v=20261117-export2"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -873,7 +858,7 @@ const esc=s=>(s||"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"
 const parseNum=s=>{const raw=String(s??"").trim(),value=Number(raw);if(!Number.isNaN(value))return Number.isFinite(value)?value:0;const fallback=parseFloat(raw.replace(/[^0-9.\-]/g,""));return Number.isFinite(fallback)?fallback:0;};
 const fmt=n=>{ n=Math.round(n*10)/10; return Number.isInteger(n)?String(n):n.toFixed(1); };
 const hoursText=n=>Math.max(0,parseNum(n)).toLocaleString("ja-JP",{maximumFractionDigits:10});
-let driveAutosaveController=null;
+let localLoader=null;
 let _routeGeneration=0;
 const _routeRequests=new Map();
 function invalidateRouteRequests(){_routeGeneration++;_routeRequests.clear();["b1","b2","b3"].forEach(base=>{const button=$(base+"_auto"),status=$(base+"_status");if(button)button.disabled=false;if(status){status.textContent="";status.className="status";}});}
@@ -932,7 +917,7 @@ async function autoCalc(p){ const st=$(p+"_status"),key=$("apiKey").value.trim()
     if(dest!==$("address").value.trim()||origin!==originAddr(p)||kocon!==$("mKocon").value||routeFields.some((value,index)=>value!==$(p+"_"+["km","h","toll"][index]).value)){st.textContent="入力内容が変わったため、取得結果は反映していません。";st.className="status";return;}
     $(p+"_km").value=r.km.toFixed(1);$(p+"_h").value=r.h.toFixed(1);$(p+"_toll").value=Math.round(r.toll);
     st.innerHTML=`片道約${r.km.toFixed(1)}km／約${r.h.toFixed(1)}h／高速${r.hasToll?yen(r.toll):"なし"}（片道）。`;st.className="status ok";
-    scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty();
+    scheduleLivePreview(); autosave();
   }catch(e){if(currentRequest()){st.innerHTML="自動取得に失敗（"+esc(e.message)+"）。下のリンクで手入力を。";st.className="status err";}} finally{if(ownsRequest()){_routeRequests.delete(p);$(p+"_auto").disabled=false;}} }
 function openMap(p,kind){ const o=originAddr(p),d=$("address").value.trim(); if(!o){alert("出発地の住所を入力してください。");return;} if(!d){alert("作業場所の住所を入力してください。");return;}
   const u=kind==="yahoo"?`https://map.yahoo.co.jp/route/car?from=${encodeURIComponent(o)}&to=${encodeURIComponent(d)}`:`https://www.google.com/maps/dir/?api=1&origin=${encodeURIComponent(o)}&destination=${encodeURIComponent(d)}&travelmode=driving`; window.open(u,"_blank"); }
@@ -952,7 +937,9 @@ function directData(){ const c=$("directUse"); if(!c||!c.checked) return null; c
   const pick=(id,def)=>{ const el=$(id); return (el&&el.value.trim()!=="")?Math.max(0,parseNum(el.value)):def; };
   return { km:a.km,h:a.h,rate:a.rate,trans:pick("d_trans",a.trans),trav:pick("d_trav",a.trav),ktoll:pick("d_ktoll",a.ktoll) }; }
 function refreshDirect(){ const on=$("directUse")&&$("directUse").checked; if($("directBox"))$("directBox").style.display=on?"block":"none";
-  ["d_trans","d_trav","d_ktoll"].forEach(id=>{ const el=$(id); if(el)el.dataset.edited=(el.value.trim()!=="")?"1":""; }); }
+  // A restored value only counts as hand-edited when it differs from the automatic amount.
+  const a=directAuto(),auto={d_trans:a.trans,d_trav:a.trav,d_ktoll:a.ktoll};
+  ["d_trans","d_trav","d_ktoll"].forEach(id=>{ const el=$(id); if(!el)return; const v=el.value.trim(); el.dataset.edited=(v!==""&&Math.max(0,parseNum(v))!==auto[id])?"1":""; }); }
 function computeItems(){
   const bases=[baseData("b1"),baseData("b2"),baseData("b3")].filter(b=>b.use);
   const both=bases.length>1;
@@ -1121,69 +1108,15 @@ function applyState(raw){ if(!raw)return; const s=validateReportState(raw); inva
 const DRAFT_KEY="kkmt_report_draft";
 let _autosaveT=null;
 let _skipDraftOnLeave=false;
-function writeLocalDraftNow(){ clearTimeout(_autosaveT); _autosaveT=null; try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("driveStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } }
+function writeLocalDraftNow(){ clearTimeout(_autosaveT); _autosaveT=null; try{ localStorage.setItem(DRAFT_KEY,JSON.stringify(collectState())); }catch(e){ const el=$("docStatus"); if(el){el.textContent="端末内の下書き保存に失敗しました。空き容量を確認してください。";el.classList.add("err");} } }
 function flushDraftOnLeave(){ if(!_skipDraftOnLeave)writeLocalDraftNow(); }
 function cancelLocalAutosave(){ clearTimeout(_autosaveT); _autosaveT=null; }
 function cancelPendingFormUpdates(){ invalidateRouteRequests(); cancelLocalAutosave(); clearTimeout(_livePreviewT); }
 function autosave(){ cancelLocalAutosave(); _autosaveT=setTimeout(writeLocalDraftNow,400); }
 function autosaveFromEvent(event){ const target=event&&event.target; if(target&&target.type==="file")return; autosave(); }
 function restoreDraft(){ try{ const d=localStorage.getItem(DRAFT_KEY); if(d){ applyState(JSON.parse(d)); return true; } }catch(e){} return false; }
-function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; _skipDraftOnLeave=true; if(driveAutosaveController)driveAutosaveController.discardCurrent(); try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
+function resetAll(){ if(!confirm("すべての入力を消去します。APIキーと作業者リストは残ります。よろしいですか？"))return; _skipDraftOnLeave=true; try{ localStorage.removeItem(DRAFT_KEY); }catch(e){} location.reload(); }
 
-async function searchReportFromDrive(){
-  const byKocon=$("driveSearchModeKocon").checked;
-  const input=$(byKocon?"mKocon":"subject");
-  const term=(input.value||"").trim();
-  if(!term){ alert(byKocon?"検索する高コン番号を入力してください。":"検索する件名を入力してください。"); return; }
-  if(!KKMTDrive.isConnected()){ driveAutosaveController.setStatus("先に共通Driveへ接続してください。","error"); return; }
-  const label=byKocon?`高コン「${term}」`:`件名「${term}」`;
-  if(!confirm(`${label}の保存済み報告書を取得し、現在の入力内容を置き換えますか？`))return;
-  driveAutosaveController.setStatus("報告書を共通Driveから検索中…");
-  try{
-    await driveAutosaveController.loadDocument({
-      load:async()=>{
-        const data=await KKMTDrive.loadJson(byKocon?{kocon:term,docType:"report"}:{subject:term,docType:"report"});
-        if(!data)throw new Error(`${label}の報告書が見つかりません。`);
-        return validateReportState(data);
-      },
-      apply:data=>{applyState(data);if(byKocon&&!$("mKocon").value)$("mKocon").value=term;if(!byKocon&&!$("subject").value)$("subject").value=term;},
-      synced:true, message:`${label}の報告書を取得しました。`
-    });
-  }catch(error){
-    console.error("Report load failed",error);
-    driveAutosaveController.setStatus("報告書を取得できませんでした。","error");
-  }
-}
-
-async function autoLoadReportFromDrive({kocon,isConnected,setStatus,isCurrent=()=>true}){
-  if(!isConnected)return false;
-  setStatus(`高コン「${kocon}」の報告書を自動取得中…`);
-  const report=await KKMTDrive.loadJson({kocon,docType:"report"});
-  if(!isCurrent())return false;
-  if(!report){ _documentRevision=0; setStatus(`新しい報告書です。入力内容を報告書ファイルへ自動保存します。`,"ok"); return {confirmed:true,revision:0,loaded:false}; }
-  applyState(report);
-  $("mKocon").value=kocon;
-  setStatus("報告書を自動取得しました。","ok");
-  return {confirmed:true,revision:_documentRevision,loaded:true};
-}
-
-async function importEstimateFromDrive(){
-  const kocon=($("mKocon").value||"").trim();
-  if(!kocon){ alert("先に高コン／見積もり番号を入力してください。"); return; }
-  if(!KKMTDrive.isConnected()){ driveAutosaveController.setStatus("先に共通Driveへ接続してください。","error"); return; }
-  if(!confirm(`高コン「${kocon}」の見積書を取り込み、現在の報告書入力を置き換えますか？`))return;
-  driveAutosaveController.setStatus("見積書を共通Driveから取得中…");
-  try{
-    await driveAutosaveController.loadDocument({
-      load:async()=>{const data=await KKMTDrive.loadJson({kocon,docType:"estimate"});if(!data)throw new Error(`高コン「${kocon}」の見積書が見つかりません。`);return validateImportedEstimate(data);},
-      apply:data=>{if(!importEstimate(data,true))throw new Error("見積書を取り込めませんでした。");$("mKocon").value=kocon;},
-      message:"見積書を報告書へ取り込みました。§8の作業者を確認してください。作業費は報告書の料金基準（1日8時間超）で再計算します。共通Driveは上書きしていません。"
-    });
-  }catch(error){
-    console.error("Estimate import failed",error);
-    driveAutosaveController.setStatus("見積書を取得できませんでした。","error");
-  }
-}
 
 /* 見積データ（御見積書メーカーのJSON）を取り込む。§1/2/4/5/6はそのまま、§3の作業内容→§8の作業行に変換 */
 function importEstimate(raw,silent){ let s; try{s=validateImportedEstimate(raw);}catch(error){if(!silent)alert(error.message);return false;}
@@ -1194,6 +1127,8 @@ function importEstimate(raw,silent){ let s; try{s=validateImportedEstimate(raw);
     mk(f.wkdPeople,f.daysWd,f.hoursWd,f.nightWd,false); mk(f.wkePeople,f.daysWe,f.hoursWe,f.nightWe,true); }
   applyState({ documentType:"report",schemaVersion:2,fields:f,parts:s.parts||[],customs:s.customs||[],lodges:s.lodges||lodgesFromState(s),work,workers:WORKERS,activeWorkers:ACTIVE });
   if(!silent)alert("見積データを取り込みました。§8の作業者名は未設定なので、必要に応じて選んでください。作業費は報告書の料金基準（1日8時間超）で再計算します。");
+  const removed=Array.isArray(s.excludedItemKeys)?s.excludedItemKeys.length:0;
+  if(removed)alert(`見積書のプレビューで削除した行が${removed}件あります。削除した行は報告書に自動では反映されないため、§2〜§6の金額を見積書と見比べて確認してください。`);
   return true; }
 
 /* ===== 報告書 追加ロジック ===== */
@@ -1201,7 +1136,7 @@ let WORKERS=[]; let sigDataURL="",_signatureGeneration=0,_signaturePending=false
 async function waitForReportSignature(){let ready,result;do{ready=_signatureReady;result=await ready;}while(ready!==_signatureReady);return result;}
 function setReportSignature(signature,verified=false){const generation=++_signatureGeneration;sigDataURL=signature;_signaturePending=!!signature&&!verified;updateSigState();
   if(!_signaturePending){_signatureReady=Promise.resolve(true);return;}
-  _signatureReady=new Promise(resolve=>{const image=new Image();image.onload=()=>{if(generation!==_signatureGeneration){resolve(false);return;}_signaturePending=false;updateSigState();resolve(true);};image.onerror=()=>{if(generation!==_signatureGeneration){resolve(false);return;}_signaturePending=false;sigDataURL="";updateSigState();$("sigState").textContent="⚠ サイン画像を表示できません。サインを記入し直してください。";if(mainPad)mainPad.clear();renderReport();autosave();if(driveAutosaveController)driveAutosaveController.markDirty();resolve(false);};image.src=signature;});
+  _signatureReady=new Promise(resolve=>{const image=new Image();image.onload=()=>{if(generation!==_signatureGeneration){resolve(false);return;}_signaturePending=false;updateSigState();resolve(true);};image.onerror=()=>{if(generation!==_signatureGeneration){resolve(false);return;}_signaturePending=false;sigDataURL="";updateSigState();$("sigState").textContent="⚠ サイン画像を表示できません。サインを記入し直してください。";if(mainPad)mainPad.clear();renderReport();autosave();resolve(false);};image.src=signature;});
 }
 const DEFAULT_WORKERS=["瑞澤","武藤","新井","近藤そ","近藤た","山口","グェン","金子あ","平野"];
 function loadWorkers(){ try{ const w=localStorage.getItem("kkmt_workers"); if(w){const saved=JSON.parse(w);if(Array.isArray(saved))WORKERS=[...new Set(saved.filter(name=>typeof name==="string"&&name.trim()))];} }catch{}
@@ -1434,7 +1369,7 @@ function makePad(cv,onEnd,onImageError){ const ctx=cv.getContext("2d");let image
   cv.addEventListener("pointerdown",e=>{cancelLoading();drawing=true;[lx,ly]=pos(e);cv.setPointerCapture(e.pointerId);});
   cv.addEventListener("pointermove",e=>{if(!drawing)return;const p=pos(e);ctx.beginPath();ctx.moveTo(lx,ly);ctx.lineTo(p[0],p[1]);ctx.stroke();lx=p[0];ly=p[1];});
   const end=()=>{if(drawing){drawing=false;if(onEnd)onEnd();}};["pointerup","pointerleave","pointercancel","lostpointercapture"].forEach(event=>cv.addEventListener(event,end));
-  return {ctx,resize,clear,whenReady:async()=>{let pending,result;do{pending=ready;result=await pending;}while(pending!==ready);return result&&!drawing;},draw:d=>{resize();if(d){ready=new Promise(resolve=>{resolveLoading=resolve;});const generation=imageGeneration,image=new Image(),fail=()=>{if(generation!==imageGeneration)return;imageGeneration++;drawing=false;ctx.clearRect(0,0,cv.width,cv.height);if(resolveLoading)resolveLoading(false);resolveLoading=null;ready=Promise.resolve(false);if(onImageError)onImageError();};image.onload=()=>{if(generation!==imageGeneration)return;try{ctx.drawImage(image,0,0,cv.width,cv.height);if(resolveLoading)resolveLoading(true);resolveLoading=null;}catch(_){fail();}};image.onerror=fail;image.src=d;}}};
+  return {ctx,resize,clear,whenReady:async()=>{let pending,result;do{pending=ready;result=await pending;}while(pending!==ready);return result&&!drawing;},draw:d=>{resize();if(d){ready=new Promise(resolve=>{resolveLoading=resolve;});const generation=imageGeneration,image=new Image(),fail=()=>{if(generation!==imageGeneration)return;imageGeneration++;drawing=false;ctx.clearRect(0,0,cv.width,cv.height);if(resolveLoading)resolveLoading(false);resolveLoading=null;ready=Promise.resolve(false);if(onImageError)onImageError();};image.onload=()=>{if(generation!==imageGeneration)return;try{const iw=image.naturalWidth||image.width||cv.width,ih=image.naturalHeight||image.height||cv.height,scale=Math.min(cv.width/iw,cv.height/ih),dw=iw*scale,dh=ih*scale;ctx.drawImage(image,(cv.width-dw)/2,(cv.height-dh)/2,dw,dh);if(resolveLoading)resolveLoading(true);resolveLoading=null;}catch(_){fail();}};image.onerror=fail;image.src=d;}}};
 }
 let mainPad=null, ssPad=null, ssDraftSignature="";
 function updateSigState(){ const el=$("sigState"); if(el)el.textContent=_signaturePending?"サイン画像を確認中…":sigDataURL?"✅ サイン取得済み（サイン画面で修正できます）":"— サイン未取得"; }
@@ -1453,9 +1388,9 @@ async function exportSignatureJson(){if(ssPad&&!(await ssPad.whenReady()))return
   const url=URL.createObjectURL(blob),a=document.createElement("a"); a.href=url; a.download=name; a.rel="noopener"; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
 function importSignatureJson(data){ ssDraftSignature=signatureFromJson(data); if(ssPad)ssPad.draw(ssDraftSignature); }
-function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{setReportSignature(cv.toDataURL("image/png"),true);scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty();});
+function initSig(){ const cv=$("sigPad"); if(cv){ mainPad=makePad(cv,()=>{setReportSignature(cv.toDataURL("image/png"),true);scheduleLivePreview(); autosave();});
     setTimeout(()=>{mainPad.resize();if(sigDataURL)mainPad.draw(sigDataURL);},60); window.addEventListener("resize",()=>{ if(mainPad){mainPad.resize(); if(sigDataURL)mainPad.draw(sigDataURL);} }); }
-  const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear();setReportSignature("",true);scheduleLivePreview(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); });
+  const sc=$("sigClear"); if(sc)sc.addEventListener("click",()=>{ if(mainPad)mainPad.clear();setReportSignature("",true);scheduleLivePreview(); autosave(); });
   updateSigState(); }
 function openSignScreen(){
   $("ssClient").textContent=($("billName").value||$("client").value).trim(); $("ssSubject").textContent=$("subject").value.trim();
@@ -1465,7 +1400,7 @@ function openSignScreen(){
 async function closeSignScreen(save){ if(save){if(ssPad&&!(await ssPad.whenReady()))return;if(!$("signScreen").classList.contains("show"))return;setReportSignature(ssDraftSignature,true);
     $("trouble").value=$("ssTrouble").value; $("cause").value=$("ssCause").value; $("action").value=$("ssAction").value;
     $("doneComplete").checked=$("ssComplete").classList.contains("on"); $("doneIncomplete").checked=$("ssIncomplete").classList.contains("on");
-    if(mainPad)mainPad.draw(sigDataURL); updateSigState(); renderReport(); autosave(); if(driveAutosaveController)driveAutosaveController.markDirty(); }
+    if(mainPad)mainPad.draw(sigDataURL); updateSigState(); renderReport(); autosave(); }
   $("signScreen").classList.remove("show"); }
 
 document.addEventListener("DOMContentLoaded",()=>{
@@ -1483,18 +1418,18 @@ document.addEventListener("DOMContentLoaded",()=>{
   $("estFile").addEventListener("change",async e=>{
     e.stopPropagation();const f=e.target.files[0];e.target.value="";if(!f)return;
     if(!/\.json$/i.test(f.name)&&f.type!=="application/json"){alert("読み込めるのは見積データ（.json）です。");return;}
-    try{await driveAutosaveController.loadDocument({
-      load:async()=>validateImportedEstimate(await KKMTDrive.readJsonFile(f)),
+    try{await localLoader.loadDocument({
+      load:async()=>validateImportedEstimate(await KKMTLocalData.readJsonFile(f)),
       apply:data=>{if(!importEstimate(data,true))throw new Error("見積書を取り込めませんでした。");},
-      message:"端末の見積データを取り込みました。共通Driveは上書きしていません。"
+      message:"端末の見積データを取り込みました。"
     });}catch(err){alert("取り込み失敗："+err.message);}
   });
   $("loadFile").addEventListener("change",async e=>{
     e.stopPropagation(); const f=e.target.files[0]; e.target.value=""; if(!f)return;
     if(!/\.json$/i.test(f.name)&&f.type!=="application/json"){alert("読み込めるのは報告書データ（.json）です。");return;}
-    try{ await driveAutosaveController.loadDocument({
-      load:async()=>validateReportState(await KKMTDrive.readJsonFile(f)), apply:applyState,
-      message:"端末の報告書データを読み込みました。共通Driveは上書きしていません。"
+    try{ await localLoader.loadDocument({
+      load:async()=>validateReportState(await KKMTLocalData.readJsonFile(f)), apply:applyState,
+      message:"端末の報告書データを読み込みました。"
     }); }catch(err){alert("読み込み失敗："+err.message);}
   });
   ["b1","b2","b3"].forEach(p=>{ $(p+"_auto").addEventListener("click",()=>autoCalc(p)); $(p+"_y").addEventListener("click",()=>openMap(p,"yahoo")); $(p+"_g").addEventListener("click",()=>openMap(p,"google")); $(p+"_use").addEventListener("change",syncBase); });
@@ -1546,24 +1481,14 @@ document.addEventListener("DOMContentLoaded",()=>{
   liveForm.addEventListener("change",scheduleLivePreview);
   const liveMutationIds=new Set(["addLodge","addCustom","addPart","addWorker","addWork"]);
   liveForm.addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&(liveMutationIds.has(b.id)||b.matches(".del,.pdel")))setTimeout(scheduleLivePreview,0); });
-  driveAutosaveController=KKMTDrive.createAutosaveController({
-    docType:"report",
+  localLoader=KKMTLocalData.createLoader({
     rootElement:document.querySelector(".app"),
-    koconInput:$("mKocon"),
-    fallbackInput:$("subject"),
-    statusElement:$("driveStatus"),
-    connectButton:$("driveConnectBtn"),
+    statusElement:$("docStatus"),
     collectState,
     restoreState:applyState,
-    onKoconConfirmed:autoLoadReportFromDrive,
-    onIdentityChanging:cancelPendingFormUpdates,
-    onIdentityChanged:writeLocalDraftNow,
-    onSavedRevision:revision=>{ _documentRevision=revision; writeLocalDraftNow(); },
-    skipInitialLoad:restoredDraft
+    beforeLoad:cancelPendingFormUpdates,
+    afterLoad:writeLocalDraftNow
   });
-  driveAutosaveController.init();
-  $("driveSearchReportBtn").addEventListener("click",searchReportFromDrive);
-  $("driveImportEstimateBtn").addEventListener("click",importEstimateFromDrive);
   const _app=document.querySelector(".app");
   _app.addEventListener("input",autosaveFromEvent); _app.addEventListener("change",autosaveFromEvent);
   _app.addEventListener("click",e=>{ const b=e.target.closest("button"); if(b&&(liveMutationIds.has(b.id)||b.matches(".del,.pdel,.addPerson,#ssOk,#sigClear")))setTimeout(autosave,0); });

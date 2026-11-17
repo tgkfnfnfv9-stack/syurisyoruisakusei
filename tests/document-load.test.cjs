@@ -66,9 +66,9 @@ class Reader {
   }
 }
 window.FileReader = Reader;
-vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "google-drive.js"), "utf8"), { window });
+vm.runInNewContext(fs.readFileSync(path.join(__dirname, "..", "local-data.js"), "utf8"), { window });
 (async () => {
-  const read = window.KKMTDrive.readJsonFile;
+  const read = window.KKMTLocalData.readJsonFile;
   assert.equal((await read({ text: '{"version":3}' })).version, 3);
   await assert.rejects(() => read({ text: "{" }), /JSONデータ/);
   await assert.rejects(() => read({ error: true }), /ファイルを読み取れません/);
