@@ -67,6 +67,9 @@
       if(pinch&&pinch.ids.some(id=>!touches.some(touch=>touch.identifier===id)))startPinch(touches);
     }
     preview.addEventListener("wheel",event=>{
+      // Plain wheel / two-finger trackpad scroll keeps scrolling the preview.
+      // Ctrl/⌘+wheel zooms; trackpad pinch also arrives as ctrlKey wheel events.
+      if(!(event.ctrlKey||event.metaKey))return;
       if(!Number.isFinite(event.deltaY)||!event.deltaY)return;
       if(event.cancelable)event.preventDefault();
       const unit=event.deltaMode===1?16:event.deltaMode===2?preview.clientHeight:1;

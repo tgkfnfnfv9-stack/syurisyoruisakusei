@@ -165,7 +165,7 @@ function fixture(options = {}) {
     global, document, preview, stage, content, status, firstCell, secondCell, outside,
     api, frames, resizeObservers, mutationObservers, mutate, flush,
     printing: value => { printing = value; },
-    wheel: (deltaY, extra = {}) => preview.emit("wheel", { deltaY, deltaMode: 0, clientX: 330, clientY: 260, ...extra }),
+    wheel: (deltaY, extra = {}) => preview.emit("wheel", { deltaY, deltaMode: 0, clientX: 330, clientY: 260, ctrlKey: true, ...extra }),
     touch: (identifier, clientX, clientY = 260, target = firstCell) => ({ identifier, clientX, clientY, target })
   };
 }
@@ -201,6 +201,15 @@ test("initialization is scoped to valid previews and is idempotent", () => {
   assert.equal(f.outside.listeners.size, 0, "form and signature controls receive no zoom listeners");
   assert.equal(f.preview.listeners.get("wheel")[0].options.passive, false);
   assert.equal(f.preview.listeners.get("touchmove")[0].options.passive, false);
+});
+
+test("plain wheel scrolls the preview; Ctrl or Cmd + wheel zooms", () => {
+  const plain = fixture();
+  assert.equal(plain.wheel(-100, { ctrlKey: false }).defaultPrevented, false);
+  close(plain.api.getScale(), 1);
+  const cmd = fixture();
+  assert.equal(cmd.wheel(-100, { ctrlKey: false, metaKey: true }).defaultPrevented, true);
+  assert.ok(cmd.api.getScale() > 1);
 });
 
 test("wheel up/down use normalized pixel, line and page deltas", () => {
