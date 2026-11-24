@@ -118,44 +118,108 @@
       };
       const canShare=list=>{try{return !!(global.navigator.share&&global.navigator.canShare&&global.navigator.canShare({files:list.map(f=>f.file)}));}catch(_){return false;}};
       const labelOf=f=>f.name.endsWith(".pdf")?"PDF":"データ（JSON）";
-      let autoSaving=false;
+      const mobile=isMobile();
+      // PC (Chrome/Edge): save into a folder the user picks. The picker id makes the
+      // browser reopen the last folder used for this document type.
+      const pickerId=options.pickerId||"kkmt-documents";
+      const pcFolder=!mobile&&typeof global.showDirectoryPicker==="function";
+      const pcFile=!mobile&&typeof global.showSaveFilePicker==="function";
+      const pickFolder=()=>global.showDirectoryPicker({id:pickerId,mode:"readwrite"});
+      let folder=null,autoSaving=false;
+      async function writeFile(handle,blob){
+        let stream;
+        try{stream=await handle.createWritable();await stream.write(blob);await stream.close();}
+        catch(error){if(stream&&stream.abort)try{await stream.abort();}catch(_){}throw error;}
+      }
+      async function saveToFolder(directory){
+        const existing=[];
+        for(const f of files){try{await directory.getFileHandle(f.name);existing.push(f.name);}catch(_){}}
+        if(existing.length&&!global.confirm(`「${directory.name}」フォルダーに同じ名前のファイルがあります。\n${existing.join("\n")}\n\n上書きしますか？`)){
+          progress("保存を取りやめました。「別のフォルダーに保存」から保存先を選び直せます。");return false;
+        }
+        let saved=0;
+        try{for(const f of files){await writeFile(await directory.getFileHandle(f.name,{create:true}),f.blob);saved++;}}
+        catch(error){if(global.console)global.console.error("Folder save failed",error);progress(`${saved}／${files.length}件を保存しました。残りは「別のフォルダーに保存」か、下の「保存」から保存し直してください。`);return false;}
+        progress(files.length>1?`「${directory.name}」フォルダーにPDFとデータの両方を保存しました。`:`「${directory.name}」フォルダーに保存しました。`);
+        return true;
+      }
+      async function locked(task){
+        working=true;close.disabled=true;
+        const controls=Array.from(actions.querySelectorAll("button,a"));
+        controls.forEach(node=>{node.disabled=true;node.setAttribute("aria-disabled","true");});
+        try{return await task();}
+        finally{working=false;close.disabled=false;controls.forEach(node=>{node.disabled=false;node.removeAttribute("aria-disabled");});}
+      }
+      function fileRow(f){
+        const group=doc.createElement("section");group.className="export-file";
+        const title=doc.createElement("h3");title.textContent=labelOf(f);
+        const filename=doc.createElement("p");filename.className="export-filename";filename.textContent=f.name;
+        const row=doc.createElement("div");row.className="export-file-actions";
+        group.append(title,filename,row);actions.appendChild(group);
+        return row;
+      }
+      function downloadLink(f,row,text){
+        const label=labelOf(f);
+        const link=doc.createElement("a");const url=global.URL.createObjectURL(f.blob);urls.push(url);
+        link.href=url;link.download=f.name;link.textContent=text;link.setAttribute("aria-label",label+"をダウンロード");
+        link.addEventListener("click",event=>{
+          if(autoSaving)return;
+          if(working){event.preventDefault();return;}
+          progress(label+"のダウンロードを開始しました。端末でファイルを確認してください。");
+        });row.appendChild(link);return link;
+      }
       function ready(complete){
         const multiple=files.length>1;
-        // Phones save through the share sheet (「ファイルに保存」 keeps both files together).
-        // PCs download straight into the downloads folder with no extra step.
-        const shareAll=isMobile()&&canShare(files);
+        if(mobile){
+          // Phones: hand the files to the share sheet (LINE, 「ファイルに保存」 etc.).
+          const shareAll=canShare(files);
+          let share=null;
+          if(shareAll)share=button(multiple?"📤 共有（PDF・データ）":"📤 "+labelOf(files[0])+"を共有",async()=>{
+            await global.navigator.share({files:files.map(f=>f.file),title:snapshot.name});
+            progress(multiple?"共有メニューに両方のファイルを渡しました。送り先・保存先でファイルを確認してください。":"共有メニューに渡しました。送り先・保存先でファイルを確認してください。");
+          },actions,true);
+          const links=[];
+          for(const f of files){
+            const row=fileRow(f);
+            if(shareAll&&canShare([f]))button("共有",async()=>{
+              await global.navigator.share({files:[f.file],title:f.name});
+              progress(labelOf(f)+"を共有メニューに渡しました。");
+            },row);
+            else links.push(downloadLink(f,row,"ダウンロード"));
+          }
+          if(!complete)return;
+          if(shareAll){
+            progress(multiple?"準備ができました。「共有」を押して、LINEや「ファイルに保存」などを選んでください。PDFだけ送るときはPDFの「共有」を押します。":"準備ができました。「共有」を押してください。");
+            // When the original tap is still active the share sheet opens without a second tap.
+            const activation=global.navigator.userActivation;
+            if(activation&&activation.isActive)return share.run();
+            return;
+          }
+          return autoDownload(links,multiple);
+        }
+        if(pcFolder)button(folder?"📂 別のフォルダーに保存":"📂 保存先フォルダーを選んで保存",async()=>{
+          const directory=await pickFolder();
+          folder=directory;await saveToFolder(directory);
+        },actions,!folder);
         const links=[];
-        let share=null;
-        if(shareAll)share=button(multiple?"PDF・データをまとめて保存":labelOf(files[0])+"を保存",async()=>{
-          await global.navigator.share({files:files.map(f=>f.file),title:snapshot.name});
-          progress(multiple?"共有メニューに両方のファイルを渡しました。「ファイルに保存」などで保存先を確認してください。":"共有メニューに渡しました。保存先でファイルを確認してください。");
-        },actions,true);
         for(const f of files){
-          const label=labelOf(f);
-          const group=doc.createElement("section");group.className="export-file";
-          const title=doc.createElement("h3");title.textContent=label;
-          const filename=doc.createElement("p");filename.className="export-filename";filename.textContent=f.name;
-          const row=doc.createElement("div");row.className="export-file-actions";
-          group.append(title,filename,row);actions.appendChild(group);
-          const link=doc.createElement("a");const url=global.URL.createObjectURL(f.blob);urls.push(url);
-          link.href=url;link.download=f.name;link.textContent=shareAll?"ダウンロード":"もう一度ダウンロード";link.setAttribute("aria-label",label+"をダウンロード");
-          link.addEventListener("click",event=>{
-            if(autoSaving)return;
-            if(working){event.preventDefault();return;}
-            progress(label+"のダウンロードを開始しました。端末でファイルを確認してください。");
-          });row.appendChild(link);links.push(link);
+          const row=fileRow(f);
+          if(pcFile)button("保存",async()=>{
+            const ext=f.name.endsWith(".pdf")?".pdf":".json";
+            const handle=await global.showSaveFilePicker({id:pickerId,suggestedName:f.name,types:[{description:labelOf(f),accept:{[f.blob.type]:[ext]}}]});
+            await writeFile(handle,f.blob);
+            progress(labelOf(f)+"を保存しました。");
+          },row);
+          else links.push(downloadLink(f,row,"もう一度ダウンロード"));
         }
         if(!complete)return;
-        if(shareAll){
-          progress(multiple?"準備ができました。「PDF・データをまとめて保存」を押すと、両方を一度に保存できます。":"準備ができました。下のボタンから保存してください。");
-          // When the original tap is still active the share sheet opens without a second tap.
-          const activation=global.navigator.userActivation;
-          if(activation&&activation.isActive)return share.run();
-          return;
-        }
+        if(folder)return locked(()=>saveToFolder(folder));
+        if(pcFolder){progress("準備ができました。「保存先フォルダーを選んで保存」を押してください。");return;}
+        // Browsers without folder access (Firefox, Safari): download as before.
         return autoDownload(links,multiple);
       }
       async function autoDownload(links,multiple){
+        if(!links.length)return;
         working=true;close.disabled=true;autoSaving=true;
         try{
           for(let i=0;i<links.length;i++){
@@ -171,7 +235,17 @@
         // Blur commits contenteditable/input changes before the atomic capture.
         if(focus&&focus.blur)focus.blur();
         if(app)app.inert=true;
-        dialog.showModal();progress("入力内容を確認中…");
+        dialog.showModal();
+        if(pcFolder){
+          // Ask for the folder right away, while the click still counts as a user action.
+          progress("保存先のフォルダーを選んでください（前回のフォルダーが最初に開きます）。");
+          try{folder=await pickFolder();}
+          catch(error){
+            if(error&&error.name==="AbortError"){cancelled=true;cleanup();return;}
+            folder=null;
+          }
+        }
+        progress("入力内容を確認中…");
         if(options.beforeCapture){
           let timer;
           try{await Promise.race([options.beforeCapture(),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error("入力の準備が時間切れになりました。もう一度お試しください。")),10000);})]);}

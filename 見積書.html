@@ -220,7 +220,7 @@ table.items{ width:100%; border-collapse:collapse; margin-top:16px; } table.item
 
     <div class="actions document-output">
       <button class="btn big export-primary" id="bothBtn">PDF・データを出力</button>
-      <p class="foot export-help">1回押すだけでPDFとデータ（JSON）の両方を同じ内容で保存します（パソコンは自動ダウンロード、携帯は共有メニューからまとめて保存）。印刷は保存したPDFを開いて行えます。</p>
+      <p class="foot export-help">PDFとデータ（JSON）の両方を同じ内容で出力します。パソコンは押すとすぐ保存先フォルダーを選ぶ画面が出ます（前回のフォルダーが最初に開きます）。携帯は「共有」からLINEや「ファイルに保存」を選べます。印刷は保存したPDFを開いて行えます。</p>
     </div>
     <p class="foot">通常明細の「備考」と、基本料金一覧と同じ横列にある「品名」枠はクリックで直接編集できます。明細の行番号横「×」で行削除。</p>
   </aside>
@@ -694,7 +694,7 @@ function(t){t.__bidiEngine__=t.prototype.__bidiEngine__=function(t){var r,n,i,a,
 <script src="local-data.js?v=20261117-local1"></script>
 <script src="ai-import.js?v=20261117-ai2"></script>
 <script src="preview-zoom.js?v=20261117-zoom2"></script>
-<script src="document-export.js?v=20261117-export2"></script>
+<script src="document-export.js?v=20261124-export3"></script>
 <script>
 const P={WORK_BASE:45000,WORK_OT:9000,WORK_NIGHT:12150,TRAVEL:5000,TRAVEL_FAR:6000,TRANSPORT:100,WEEKEND:1.5,TAX:0.10};
 const taxExclude=v=>Math.ceil(v/(1+P.TAX));   // 税込→税抜：切り上げ
@@ -956,6 +956,7 @@ function resetAll(){ if(!confirm("すべての入力を消去します。APIキ�
 function fileBaseName(){ const kocon=($("mKocon").value||"").trim(); const subject=($("subject").value||"件名未入力").trim(); return [...[kocon,subject].filter(Boolean),"見積もり"].join("_").replace(/[\\\/:*?"<>|]/g,"_"); }
 function flushLivePreview(){ clearTimeout(_livePreviewT); renderSheet(); }
 const outputController=KKMTDocumentExport.create({
+  pickerId:"kkmt-estimate",
   capture(kind){
     if(kind!=="json")flushLivePreview();
     const state=JSON.parse(JSON.stringify(collectState())),name=fileBaseName();
