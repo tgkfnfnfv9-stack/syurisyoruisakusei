@@ -96,10 +96,10 @@ test("phone: one share action saves both files; cancellation retries without ano
   const exporter = f.api.create({ capture() { return { name: "共有テスト", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
   await exporter.start("both");
   assert.equal(f.downloads.length, 0, "phones do not fire download popups");
-  assert.match(f.text(), /まとめて保存/);
-  const share = f.button("まとめて保存"); assert.ok(share);
+  const share = f.button("📤 共有（PDF・データ）"); assert.ok(share);
+  assert.equal(f.document.querySelectorAll(".export-file").filter(g => g.querySelector("button")).length, 2, "each file can be shared alone (e.g. PDF to LINE)");
   await share.click(); assert.match(f.text(), /キャンセル/);
-  assert.equal(share.disabled, false); assert.equal(f.document.querySelectorAll("a").length, 2);
+  assert.equal(share.disabled, false); assert.equal(f.document.querySelectorAll(".export-file").length, 2);
   await share.click(); assert.equal(attempts, 2); assert.equal(f.captures.length, 1);
   assert.deepEqual(Array.from(shared.files, file => file.name), ["共有テスト.pdf", "共有テスト.json"]);
   f.cleanup();
@@ -119,7 +119,7 @@ test("phone without mixed-file sharing downloads both files automatically", asyn
   const f = fixture({ navigator: { userAgent: IPHONE, canShare: ({ files }) => files.length === 1 && files[0].type === "application/pdf", share() {} } });
   const exporter = f.api.create({ capture() { return { name: "非対応端末", state: { fields: {} }, pages: [new f.Element("section")], dispose() {} }; } });
   await exporter.start("both");
-  assert.equal(f.button("まとめて保存"), undefined);
+  assert.equal(f.button("📤 共有"), undefined);
   assert.equal(f.buttons().length, 1, "only the close button remains");
   assert.equal(f.downloads.length, 2);
   assert.match(f.text(), /両方をダウンロードしました/);
@@ -238,20 +238,17 @@ test("PDF snapshot preserves standards doctype and report continuation CSS ances
   f.cleanup();
 });
 
-test("each file stays with its filename and closing during sharing is blocked", async () => {
-  const wait = deferred();
-  const f = fixture({ navigator: { userAgent: IPHONE, canShare: () => true, share: () => wait.promise } });
+test("each file stays with its filename, can be shared alone, and closing during sharing is blocked", async () => {
+  const wait = deferred(); const shared = [];
+  const f = fixture({ navigator: { userAgent: IPHONE, canShare: () => true, share: data => { shared.push(Array.from(data.files, x => x.name)); return shared.length === 1 ? Promise.resolve() : wait.promise; } } });
   const exporter = f.api.create({ capture: () => ({ name: "同じ書類", state: {}, pages: [new f.Element("section")] }) });
   await exporter.start("both");
   const groups = f.document.querySelectorAll(".export-file");
   assert.equal(groups.length, 2);
-  groups.forEach((group, i) => {
-    const link = group.querySelector("a");
-    assert.equal(link.download, "同じ書類" + (i ? ".json" : ".pdf"));
-    assert.equal(group.querySelector(".export-filename").textContent, link.download);
-    assert.match(link.textContent, /ダウンロード/);
-  });
-  const pending = f.button("まとめて保存").click();
+  groups.forEach((group, i) => assert.equal(group.querySelector(".export-filename").textContent, "同じ書類" + (i ? ".json" : ".pdf")));
+  await groups[0].querySelector("button").click();
+  assert.deepEqual(shared[0], ["同じ書類.pdf"], "PDF alone goes to the share sheet");
+  const pending = f.button("📤 共有（PDF・データ）").click();
   await f.document.querySelector("dialog").emit("cancel");
   assert.doesNotMatch(f.document.querySelector("[role=status]").textContent, /中止/);
   assert.equal(f.document.querySelectorAll("dialog").length, 1);
@@ -260,6 +257,78 @@ test("each file stays with its filename and closing during sharing is blocked", 
   assert.match(f.document.querySelector("[role=status]").textContent, /再試行/);
   await f.button("閉じる").click();
   assert.equal(f.document.querySelectorAll("dialog").length, 0);
+  f.cleanup();
+});
+
+function folderMock(existing = []) {
+  const written = new Map(); let picks = 0, pickedBeforeCapture = null;
+  const directory = {
+    name: "見積書2026",
+    async getFileHandle(name, opts = {}) {
+      if (!opts.create && !existing.includes(name) && !written.has(name)) throw Object.assign(new Error("nf"), { name: "NotFoundError" });
+      return { async createWritable() { let data; return { async write(blob) { data = blob; }, async close() { written.set(name, data); }, async abort() {} }; } };
+    }
+  };
+  return { written, directory, get picks() { return picks; }, pick(options, f) { picks++; return directory; } };
+}
+
+test("PC: the folder picker opens immediately on click, then PDF and JSON are saved there", async () => {
+  const f = fixture(); const m = folderMock(); const order = []; let pickerOptions;
+  f.global.showDirectoryPicker = async options => { order.push("picker"); pickerOptions = options; return m.pick(); };
+  const exporter = f.api.create({ pickerId: "kkmt-estimate", capture() { order.push("capture"); return { name: "見積", state: { fields: { subject: "A" } }, pages: [new f.Element("section")] }; } });
+  await exporter.start("both");
+  assert.deepEqual(order, ["picker", "capture"], "folder is chosen before generation, while the click is fresh");
+  assert.equal(pickerOptions.id, "kkmt-estimate", "browser reopens the last folder for this document type");
+  assert.deepEqual([...m.written.keys()].sort(), ["見積.json", "見積.pdf"]);
+  assert.equal(JSON.parse(await m.written.get("見積.json").text()).fields.subject, "A");
+  assert.equal(f.downloads.length, 0, "nothing goes to the downloads folder");
+  assert.match(f.document.querySelector("[role=status]").textContent, /「見積書2026」フォルダーにPDFとデータの両方を保存しました/);
+  assert.ok(f.button("別のフォルダーに保存"));
+  f.cleanup();
+});
+
+test("PC: cancelling the folder picker cancels the export without generating anything", async () => {
+  const f = fixture(); let captures = 0;
+  const app = new f.Element("main"); app.className = "app"; f.document.body.appendChild(app);
+  f.global.showDirectoryPicker = async () => { throw Object.assign(new Error("cancel"), { name: "AbortError" }); };
+  const exporter = f.api.create({ capture() { captures++; return { name: "x", state: {}, pages: [new f.Element("section")] }; } });
+  await exporter.start("both");
+  assert.equal(captures, 0); assert.equal(f.captures.length, 0);
+  assert.equal(f.document.querySelectorAll("dialog").length, 0); assert.equal(app.inert, false);
+  f.cleanup();
+});
+
+test("PC: existing files are only overwritten after confirmation; declining keeps a retry button", async () => {
+  for (const answer of [false, true]) {
+    const f = fixture(); const m = folderMock(["見積.pdf"]); const asked = [];
+    f.global.showDirectoryPicker = async () => m.pick();
+    f.global.confirm = message => { asked.push(message); return answer; };
+    const exporter = f.api.create({ capture: () => ({ name: "見積", state: {}, pages: [new f.Element("section")] }) });
+    await exporter.start("both");
+    assert.equal(asked.length, 1); assert.match(asked[0], /見積\.pdf/); assert.match(asked[0], /上書き/);
+    assert.equal(m.written.size, answer ? 2 : 0);
+    if (!answer) {
+      assert.match(f.document.querySelector("[role=status]").textContent, /取りやめ/);
+      await f.button("別のフォルダーに保存").click();
+      assert.equal(m.picks, 2); assert.equal(asked.length, 2);
+    }
+    f.cleanup();
+  }
+});
+
+test("PC: if the picker is unavailable for this click, a folder button and per-file save are offered", async () => {
+  const f = fixture(); const m = folderMock(); let single = null;
+  let first = true;
+  f.global.showDirectoryPicker = async () => { if (first) { first = false; throw Object.assign(new Error("no gesture"), { name: "SecurityError" }); } return m.pick(); };
+  f.global.showSaveFilePicker = async options => { single = options; return { async createWritable() { return { async write() {}, async close() {} }; } }; };
+  const exporter = f.api.create({ pickerId: "kkmt-report", capture: () => ({ name: "報告", state: {}, pages: [new f.Element("section")] }) });
+  await exporter.start("both");
+  assert.equal(m.written.size, 0); assert.equal(f.downloads.length, 0);
+  assert.match(f.document.querySelector("[role=status]").textContent, /保存先フォルダーを選んで保存/);
+  await f.document.querySelectorAll(".export-file")[0].querySelector("button").click();
+  assert.equal(single.suggestedName, "報告.pdf"); assert.equal(single.id, "kkmt-report");
+  await f.button("保存先フォルダーを選んで保存").click();
+  assert.equal(m.written.size, 2);
   f.cleanup();
 });
 
