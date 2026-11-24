@@ -38,7 +38,7 @@ node --test tests/*.test.cjs
 
 ## 残る確認事項（実機）
 
-- iPhone Safari／Android Chrome での「まとめて保存」と共有先（ファイル）への両方の保存。
+- iPhone Safari／Android Chrome での「📤 共有（PDF・データ）」と、LINE・「ファイルに保存」への両方の受け渡し。
 - Chrome／Edge（PC）での実際のフォルダー選択・前回フォルダーの再表示・日本語ファイル名での保存（テスト用ブラウザの一時領域は日本語名を書き込めないため、名前を変換して検証）。
 - Firefox／Safari（PC）での2ファイル連続ダウンロード。
 - 実PDFのサイン・画像・日本語文字・金額・複数ページの目視確認。
