@@ -125,7 +125,7 @@
       const pcFolder=!mobile&&typeof global.showDirectoryPicker==="function";
       const pcFile=!mobile&&typeof global.showSaveFilePicker==="function";
       const pickFolder=()=>global.showDirectoryPicker({id:pickerId,mode:"readwrite"});
-      let folder=null,autoSaving=false;
+      let autoSaving=false;
       async function writeFile(handle,blob){
         let stream;
         try{stream=await handle.createWritable();await stream.write(blob);await stream.close();}
@@ -135,20 +135,13 @@
         const existing=[];
         for(const f of files){try{await directory.getFileHandle(f.name);existing.push(f.name);}catch(_){}}
         if(existing.length&&!global.confirm(`「${directory.name}」フォルダーに同じ名前のファイルがあります。\n${existing.join("\n")}\n\n上書きしますか？`)){
-          progress("保存を取りやめました。「別のフォルダーに保存」から保存先を選び直せます。");return false;
+          progress("保存を取りやめました。もう一度押して、別のフォルダーを選べます。");return false;
         }
         let saved=0;
         try{for(const f of files){await writeFile(await directory.getFileHandle(f.name,{create:true}),f.blob);saved++;}}
-        catch(error){if(global.console)global.console.error("Folder save failed",error);progress(`${saved}／${files.length}件を保存しました。残りは「別のフォルダーに保存」か、下の「保存」から保存し直してください。`);return false;}
+        catch(error){if(global.console)global.console.error("Folder save failed",error);progress(`${saved}／${files.length}件を保存しました。残りはもう一度保存するか、下の「保存」から保存し直してください。`);return false;}
         progress(files.length>1?`「${directory.name}」フォルダーにPDFとデータの両方を保存しました。`:`「${directory.name}」フォルダーに保存しました。`);
         return true;
-      }
-      async function locked(task){
-        working=true;close.disabled=true;
-        const controls=Array.from(actions.querySelectorAll("button,a"));
-        controls.forEach(node=>{node.disabled=true;node.setAttribute("aria-disabled","true");});
-        try{return await task();}
-        finally{working=false;close.disabled=false;controls.forEach(node=>{node.disabled=false;node.removeAttribute("aria-disabled");});}
       }
       function fileRow(f){
         const group=doc.createElement("section");group.className="export-file";
@@ -170,26 +163,20 @@
       }
       function ready(complete){
         const multiple=files.length>1;
+        const bothLabel=multiple?"PDF・データをまとめて保存":labelOf(files[0])+"を保存";
+        const links=[];
         if(mobile){
-          // Phones: hand the files to the share sheet (LINE, 「ファイルに保存」 etc.).
+          // Phones: the share sheet (LINE, 「ファイルに保存」 etc.) receives both files at once.
           const shareAll=canShare(files);
           let share=null;
-          if(shareAll)share=button(multiple?"📤 共有（PDF・データ）":"📤 "+labelOf(files[0])+"を共有",async()=>{
+          if(shareAll)share=button(bothLabel,async()=>{
             await global.navigator.share({files:files.map(f=>f.file),title:snapshot.name});
             progress(multiple?"共有メニューに両方のファイルを渡しました。送り先・保存先でファイルを確認してください。":"共有メニューに渡しました。送り先・保存先でファイルを確認してください。");
           },actions,true);
-          const links=[];
-          for(const f of files){
-            const row=fileRow(f);
-            if(shareAll&&canShare([f]))button("共有",async()=>{
-              await global.navigator.share({files:[f.file],title:f.name});
-              progress(labelOf(f)+"を共有メニューに渡しました。");
-            },row);
-            else links.push(downloadLink(f,row,"ダウンロード"));
-          }
+          for(const f of files)links.push(downloadLink(f,fileRow(f),"ダウンロード"));
           if(!complete)return;
           if(shareAll){
-            progress(multiple?"準備ができました。「共有」を押して、LINEや「ファイルに保存」などを選んでください。PDFだけ送るときはPDFの「共有」を押します。":"準備ができました。「共有」を押してください。");
+            progress(multiple?"準備ができました。「PDF・データをまとめて保存」を押すと、両方を一度に保存・共有できます。":"準備ができました。下のボタンから保存してください。");
             // When the original tap is still active the share sheet opens without a second tap.
             const activation=global.navigator.userActivation;
             if(activation&&activation.isActive)return share.run();
@@ -197,11 +184,12 @@
           }
           return autoDownload(links,multiple);
         }
-        if(pcFolder)button(folder?"📂 別のフォルダーに保存":"📂 保存先フォルダーを選んで保存",async()=>{
+        // PC (Chrome/Edge): the big button picks a folder and saves both files there;
+        // each file's 「保存」 opens a save-as dialog.
+        if(pcFolder)button(bothLabel,async()=>{
           const directory=await pickFolder();
-          folder=directory;await saveToFolder(directory);
-        },actions,!folder);
-        const links=[];
+          await saveToFolder(directory);
+        },actions,true);
         for(const f of files){
           const row=fileRow(f);
           if(pcFile)button("保存",async()=>{
@@ -213,8 +201,7 @@
           else links.push(downloadLink(f,row,"もう一度ダウンロード"));
         }
         if(!complete)return;
-        if(folder)return locked(()=>saveToFolder(folder));
-        if(pcFolder){progress("準備ができました。「保存先フォルダーを選んで保存」を押してください。");return;}
+        if(pcFolder){progress(multiple?"準備ができました。「PDF・データをまとめて保存」を押して、保存先のフォルダーを選んでください（前回のフォルダーが最初に開きます）。":"準備ができました。「"+bothLabel+"」を押して、保存先のフォルダーを選んでください。");return;}
         // Browsers without folder access (Firefox, Safari): download as before.
         return autoDownload(links,multiple);
       }
@@ -236,15 +223,6 @@
         if(focus&&focus.blur)focus.blur();
         if(app)app.inert=true;
         dialog.showModal();
-        if(pcFolder){
-          // Ask for the folder right away, while the click still counts as a user action.
-          progress("保存先のフォルダーを選んでください（前回のフォルダーが最初に開きます）。");
-          try{folder=await pickFolder();}
-          catch(error){
-            if(error&&error.name==="AbortError"){cancelled=true;cleanup();return;}
-            folder=null;
-          }
-        }
         progress("入力内容を確認中…");
         if(options.beforeCapture){
           let timer;
